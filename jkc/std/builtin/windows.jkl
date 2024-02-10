@@ -1,0 +1,4 @@
+
+const Windows: byte = 1;
+const Linux: byte = 0;
+const Unix: byte = 0;
