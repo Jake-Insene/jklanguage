@@ -37,8 +37,8 @@ Value ThreadExecution::Exec(this ThreadExecution& Self, unsigned int Index, Valu
     Function& fn = Self.Asm.Functions.Data[Index];
 
     StackFrame frame = {};
-    frame.FP = SP - fn.Header.LocalCount;
-    frame.SP = frame.FP;
+    frame.FP = SP - fn.Header.Arguments;
+    frame.SP = SP + fn.Header.LocalCount;
     frame.Globals = Self.Asm.Globals.Data;
 
     while (true) {
@@ -102,7 +102,7 @@ void ThreadExecution::ExecCommon(this ThreadExecution& Self, const Function& Fn,
         IP += 8;
     }
         break;
-    case codefile::OpCode::RMov:
+    case codefile::OpCode::MovRes:
     {
         Registers[Fn.Code.Data[IP++]] = Frame.Result;
     }
@@ -111,7 +111,7 @@ void ThreadExecution::ExecCommon(this ThreadExecution& Self, const Function& Fn,
     {
         codefile::LIL& lil = *(codefile::LIL*)(Fn.Code.Data + IP);
         IP += sizeof(codefile::LIL);
-        Frame.FP[lil.Index()] = Registers[lil.SrcDest];
+        Frame.FP[lil.Index] = Registers[lil.SrcDest];
     }
     break;
 
@@ -119,7 +119,7 @@ void ThreadExecution::ExecCommon(this ThreadExecution& Self, const Function& Fn,
     {
         codefile::LIL& lil = *(codefile::LIL*)(Fn.Code.Data + IP);
         IP += sizeof(codefile::LIL);
-        Registers[lil.SrcDest] = Frame.FP[lil.Index()];
+        Registers[lil.SrcDest] = Frame.FP[lil.Index];
     }
     break;
     case codefile::OpCode::GlobalSet:
@@ -359,7 +359,7 @@ void ThreadExecution::ExecCommon(this ThreadExecution& Self, const Function& Fn,
     }
 }
 
-void ThreadExecution::ExecStack(this ThreadExecution& Self, const Function& Fn, codefile::OpCodeStack S,
+void ThreadExecution::ExecStack(this ThreadExecution& /*Self*/, const Function& Fn, codefile::OpCodeStack S,
                                 StackFrame& Frame, UInt& IP) {
     switch (S) {
     case codefile::OpCodeStack::RPush:
@@ -416,8 +416,8 @@ void ThreadExecution::ExecStack(this ThreadExecution& Self, const Function& Fn, 
     }
 }
 
-void ThreadExecution::ExecMemory(this ThreadExecution& Self, const Function& Fn, codefile::OpCodeMemory M,
-                                 StackFrame& Frame, UInt& IP) {
+void ThreadExecution::ExecMemory(this ThreadExecution& /*Self*/, const Function& /*Fn*/, codefile::OpCodeMemory /*M*/,
+                                 StackFrame& /*Frame*/, UInt& /*IP*/) {
 }
 
 void ThreadExecution::Destroy(this ThreadExecution& Self) {

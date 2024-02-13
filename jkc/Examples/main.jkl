@@ -1,11 +1,13 @@
 
+
 fn Fact(Num: int) int {
-	if(Num == 0) {
-		return 1;
-	}
-	return Num * Fact(Num - 1);
+    if(Num == 0) {
+        return 1;
+    }
+
+    return Num * Fact(Num - 1);
 }
 
 fn Main() int {
-	return Fact(10);
+    return Fact(50);
 }

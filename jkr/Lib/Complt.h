@@ -21,3 +21,10 @@ struct TIsSameAs : BoolConstant<TIsSameAsV<T1, T2>> {};
 
 template <typename T, class... TArgs>
 inline constexpr bool IsSameAs = (TIsSameAsV<T, TArgs> || ...);
+
+template<typename T>
+inline constexpr bool IsPrimitive = IsSameAs<
+    T, Byte, Int, UInt, USize, ISize, IntPtr, Address,
+    char, short, int, long long,
+    unsigned short, unsigned int, unsigned long long
+>;

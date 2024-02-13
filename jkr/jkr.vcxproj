@@ -23,6 +23,7 @@
     <ClInclude Include="CodeFile\Header.h" />
     <ClInclude Include="CodeFile\OpCodes.h" />
     <ClInclude Include="CodeFile\Object.h" />
+    <ClInclude Include="CodeFile\Types.h" />
     <ClInclude Include="Lib\Complt.h" />
     <ClInclude Include="Lib\List.h" />
     <ClInclude Include="Lib\Error.h" />
@@ -46,11 +47,10 @@
     <ClInclude Include="Utility.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Impl\Win32\Win32Allocator.cpp" />
+    <ClCompile Include="Impl\Win32\Win32Error.cpp" />
+    <ClCompile Include="Impl\Win32\Win32File.cpp" />
     <ClCompile Include="Lib\Error.cpp" />
-    <ClCompile Include="Lib\String.cpp" />
-    <ClCompile Include="Impl\Win32\Common\Win32Error.cpp" />
-    <ClCompile Include="Impl\Win32\IO\Win32File.cpp" />
-    <ClCompile Include="Impl\Win32\Mem\Win32Allocator.cpp" />
     <ClCompile Include="IO\File.cpp" />
     <ClCompile Include="Mem\Allocator.cpp" />
     <ClInclude Include="Mem\Allocator.h" />

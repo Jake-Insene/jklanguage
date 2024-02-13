@@ -63,7 +63,9 @@ struct MemoryBuffer {
         Buff.Clear();
     }
 
-    constexpr void Destroy() {}
+    constexpr void Destroy() {
+        Buff.Destroy();
+    }
 
     List<Byte> Buff;
 };

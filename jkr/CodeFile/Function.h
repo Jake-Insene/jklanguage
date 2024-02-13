@@ -8,10 +8,13 @@ enum FunctionAttributes {
     FunctionAOT = 0x01,
 };
 
+constexpr auto MaxArguments = 32;
+
 struct FunctionHeader {
     Byte Attributes;
+    // Arguments are part of LocalCount but are used for diferent things
     Byte Arguments;
-    unsigned short LocalCount;
+    Byte LocalCount;
     unsigned int SizeOfCode;
 };
 

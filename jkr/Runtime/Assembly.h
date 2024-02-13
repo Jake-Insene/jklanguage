@@ -15,7 +15,7 @@ struct [[nodiscard]] Function {
     static constexpr Function New() {
         return Function{
             .Header = {},
-            .Code = List<Byte>(0),
+            .Code = List<Byte>::New(0),
         };
     }
 
@@ -28,6 +28,12 @@ struct [[nodiscard]] Function {
 };
 
 struct [[nodiscard]] Import {
+
+    static Import New() {
+        return Import{};
+    }
+
+    void Destroy(this Import& /*Self*/) {}
 
 };
 
@@ -44,6 +50,7 @@ struct [[nodiscard]] Assembly {
     constexpr void Destroy(this Assembly& Self) {
         Self.Functions.Destroy();
         Self.Globals.Destroy();
+        Self.Imports.Destroy();
     }
 
 };

@@ -11,13 +11,13 @@ namespace CodeGen {
 struct [[nodiscard]] JKLocal {
     Str Name;
     AST::TypeDecl Type;
-    Uint16 Index;
+    codefile::LocalType Index;
 };
 
 struct [[nodiscard]] JKGlobal {
     Str Name;
     AST::TypeDecl Type;
-    Uint32 Index;
+    codefile::GlobalType Index;
 };
 
 struct [[nodiscard]] JKFunction {
@@ -26,7 +26,7 @@ struct [[nodiscard]] JKFunction {
     MemoryBuffer Code;
     Byte CountOfArguments;
     SymbolTable<JKLocal> Locals;
-    Uint32 Index;
+    codefile::FunctionType Index;
 
     struct {
         Str Entry;
@@ -64,16 +64,15 @@ struct JKRAssembler {
         Fn.Code.Write((Byte*)&cil, sizeof(codefile::CIL));
     }
 
-    constexpr void LIL(this JKRAssembler& /*Self*/, JKFunction& Fn, Uint16 Idx, Byte SrcDest) {
+    constexpr void LIL(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::LocalType Idx, Byte SrcDest) {
         codefile::LIL lil = {
             .SrcDest = SrcDest,
+            .Index = Idx,
         };
-        *(Uint16*)&lil.Idx1 = Idx;
-
         Fn.Code.Write((Byte*)&lil, sizeof(codefile::LIL));
     }
 
-    constexpr void GIL(this JKRAssembler& /*Self*/, JKFunction& Fn, Uint32 Idx, Byte SrcDest) {
+    constexpr void GIL(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::GlobalType Idx, Byte SrcDest) {
         codefile::GIL gil = {
             .SrcDest = SrcDest,
         };
@@ -82,22 +81,22 @@ struct JKRAssembler {
         Fn.Code.Write((Byte*)&gil, sizeof(codefile::GIL));
     }
 
-    constexpr void LocalSet(this JKRAssembler& Self, JKFunction& Fn, Byte Src, Uint16 Idx) {
+    constexpr void LocalSet(this JKRAssembler& Self, JKFunction& Fn, Byte Src, codefile::LocalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::LocalSet;
         Self.LIL(Fn, Idx, Src);
     }
     
-    constexpr void LocalGet(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Uint16 Idx) {
+    constexpr void LocalGet(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, codefile::LocalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::LocalGet;
         Self.LIL(Fn, Idx, Dest);
     }
 
-    constexpr void GlobalSet(this JKRAssembler& Self, JKFunction& Fn, Byte Src, Uint32 Idx) {
+    constexpr void GlobalSet(this JKRAssembler& Self, JKFunction& Fn, Byte Src, codefile::GlobalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::GlobalSet;
         Self.GIL(Fn, Idx, Src);
     }
 
-    constexpr void GlobalGet(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Uint32 Idx) {
+    constexpr void GlobalGet(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, codefile::GlobalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::GlobalGet;
         Self.GIL(Fn, Idx, Dest);
     }
@@ -132,7 +131,7 @@ struct JKRAssembler {
     }
 
     constexpr void RMov(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest) {
-        Fn.Code << (Byte)codefile::OpCode::RMov;
+        Fn.Code << (Byte)codefile::OpCode::MovRes;
         Fn.Code << Dest;
     }
 
@@ -216,7 +215,7 @@ struct JKRAssembler {
         Fn.Code << Address;
     }
 
-    constexpr void Call(this JKRAssembler& /*Self*/, JKFunction& Fn, Uint32 Index) {
+    constexpr void Call(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::FunctionType Index) {
         Fn.Code << (Byte)codefile::OpCode::Call;
         Fn.Code << Index;
     }
@@ -230,12 +229,12 @@ struct JKRAssembler {
         Fn.Code << Dest;
     }
 
-    constexpr void LRet(this JKRAssembler& Self, JKFunction& Fn, Uint16 Idx) {
+    constexpr void LRet(this JKRAssembler& Self, JKFunction& Fn, codefile::LocalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::LRet;
         Self.LIL(Fn, Idx, 0);
     }
 
-    constexpr void GRet(this JKRAssembler& Self, JKFunction& Fn, Uint32 Idx) {
+    constexpr void GRet(this JKRAssembler& Self, JKFunction& Fn, codefile::GlobalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::GRet;
         Self.GIL(Fn, Idx, 0);
     }
@@ -246,13 +245,13 @@ struct JKRAssembler {
         Fn.Code << Reg;
     }
 
-    constexpr void LPush(this JKRAssembler& /*Self*/, JKFunction& Fn, Uint16 Idx) {
+    constexpr void LPush(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::LocalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
         Fn.Code << (Byte)codefile::OpCodeStack::LPush;
         Fn.Code << Idx;
     }
 
-    constexpr void LPush(this JKRAssembler& /*Self*/, JKFunction& Fn, Uint32 Idx) {
+    constexpr void GPush(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::GlobalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
         Fn.Code << (Byte)codefile::OpCodeStack::GPush;
         Fn.Code << Idx;

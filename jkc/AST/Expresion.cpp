@@ -13,7 +13,7 @@ void Expresion::Destroy(this Expresion& Self) {
         Identifier* id = Cast<Identifier*>(&Self);
         id->ID.~basic_string();
     }
-    else if (Self.Type == ExpresionType::Identifier) {
+    else if (Self.Type == ExpresionType::Group) {
         Group* g = Cast<Group*>(&Self);
         g->Value.Destroy();
     }

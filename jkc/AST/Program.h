@@ -14,7 +14,7 @@ struct Program {
     static constexpr Program New(Str Name = STR("")) {
         return Program{
             .Name = Name,
-            .Statements = List<mem::Ptr<AST::Statement>>::New(2),
+            .Statements = List<mem::Ptr<AST::Statement>>::New(0),
         };
     }
 

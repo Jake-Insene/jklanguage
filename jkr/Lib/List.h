@@ -7,11 +7,6 @@
 
 template<typename T, bool UseNew = true>
 struct [[nodiscard]] List {
-    static constexpr bool IsPrimitive = IsSameAs<
-        T, Byte, Int, UInt, USize, ISize, IntPtr, Address,
-        char, short, int, long long,
-        unsigned short, unsigned int, unsigned long long
-    >;
 
     using Iterator = T*;
     using ConstIterator = const T*;
@@ -52,10 +47,10 @@ struct [[nodiscard]] List {
         if (Self.Size >= Self.Capacity)
             Self.GrowCapacity(Self.Capacity ? Self.Capacity + (Self.Capacity/2) : 2);
 
-        if constexpr (UseNew && !IsPrimitive) {
-            return Self.Data[Self.Size++] = Cast<T&&>(T::New(Args...));
+        if constexpr (UseNew && !IsPrimitive<T>) {
+            return Self.Data[Self.Size++] = T::New(Args...);
         }
-        else if constexpr (IsPrimitive) {
+        else if constexpr (IsPrimitive<T>) {
             return Self.Data[Self.Size++] = T(Args...);
         }
         else {
@@ -63,12 +58,12 @@ struct [[nodiscard]] List {
         }
     }
 
-    constexpr T& Insert(this List& Self, USize Index, T&& V) {
+    constexpr T& Insert(this List& Self, USize Index, T V) {
         if (Self.Size >= Self.Capacity)
             Self.GrowCapacity(Self.Capacity ? Self.Capacity + (Self.Capacity / 2) : 2);
 
         mem::Move(Self.Data + Index + 1, Self.Data + Index, sizeof(T) * Self.Size);
-        if constexpr (UseNew) {
+        if constexpr (UseNew || IsPrimitive<T>) {
             Self.Data[Index] = V;
         }
         else {
@@ -86,26 +81,25 @@ struct [[nodiscard]] List {
         }
         else {
             T* newData = mem::CountOf<T>(NewSize);
-            mem::Copy(newData, Self.Data, Self.Capacity);
+            mem::Copy(newData, Self.Data, sizeof(T) * Self.Capacity);
             mem::Deallocate(
-                Cast<Address>(Self.Data),
-                sizeof(T) * Self.Capacity
+                Self.Data
             );
+            Self.Data = newData;
         }
         Self.Capacity = NewSize;
     }
 
     constexpr void Clear(this List& Self) {
         Self.Deconstruct();
+
+        Self.Size = 0;
     }
 
     constexpr void Deconstruct(this List& Self) {
-        for (auto& s : Self) {
-            if constexpr (UseNew && !IsPrimitive) {
+        if constexpr (UseNew && !IsPrimitive<T>) {
+            for (auto& s : Self) {
                 s.Destroy();
-            }
-            else if constexpr (!IsPrimitive) {
-                s.~T();
             }
         }
     }
@@ -114,8 +108,7 @@ struct [[nodiscard]] List {
         Self.Deconstruct();
 
         mem::Deallocate(
-            Cast<Address>(Self.Data), 
-            sizeof(T) * Self.Capacity
+            Self.Data
         );
     }
 

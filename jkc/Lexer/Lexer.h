@@ -80,7 +80,7 @@ struct Lexer {
     Token GetDigit();
     Token GetString();
 
-    const Char* FileName;
+    Str FileName;
     StreamOutput& ErrorStream;
     bool IsPanicMode = false;
 

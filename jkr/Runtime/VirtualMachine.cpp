@@ -12,7 +12,6 @@ VirtualMachine JK_API VirtualMachine::New(USize StackSize, Assembly& Asm) {
 }
 
 Value JK_API VirtualMachine::ExecMain(this VirtualMachine& Self) {
-    DebugAssert(Self.Asm.Header.EntryPoint <= Self.Asm.Functions.Size);
     if (Self.Asm.Err != AsmOk) return {};
     return Self.MainThread.Exec(Self.Asm.Header.EntryPoint, Self.MainThread.ThreadStack.Start);
 }

@@ -26,8 +26,9 @@ struct [[nodiscard]] TmpValue {
     TmpType Ty;
 
     union {
-        Uint8 Reg;
-        Uint16 Local;
+        Byte Reg;
+        codefile::LocalType Local;
+        codefile::GlobalType Global;
         Float Real;
         UInt Data;
     };
@@ -107,13 +108,22 @@ struct Emitter {
 
     JKRAssembler Assembler;
 
-    RegisterInfo Registers[6] = {
+    RegisterInfo Registers[15] = {
         {0, false},
         {1, false},
         {2, false},
         {3, false},
         {4, false},
         {5, false},
+        {6, false},
+        {7, false},
+        {8, false },
+        {9, false },
+        {10, false },
+        {11, false },
+        {12, false },
+        {13, false },
+        {14, false },
     };
 
     SymbolTable<JKFunction> Functions;

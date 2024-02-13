@@ -30,4 +30,4 @@ using ISize = int;
 using USize = unsigned int;
 #endif
 
-using Address = IntPtr;
+using Address = void*;

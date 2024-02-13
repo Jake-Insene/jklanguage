@@ -12,6 +12,15 @@ Str Registers[] = {
 	STR("r3"),
 	STR("r4"),
 	STR("r5"),
+	STR("r6"),
+	STR("r7"),
+	STR("r8"),
+	STR("r9"),
+	STR("r10"),
+	STR("r11"),
+	STR("r12"),
+	STR("r13"),
+	STR("r14"),
 	STR("rmem"),
 };
 
@@ -148,7 +157,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 			Output.Println(STR("mov {s}, #{q}"), Registers[reg], c);
 		}
 			break;
-		case codefile::OpCode::RMov:
+		case codefile::OpCode::MovRes:
 		{
 			i++;
 			Byte reg = 0;
@@ -161,7 +170,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 			codefile::LIL lil = {};
 			File.Read(Cast<Byte*>(&lil), sizeof(codefile::LIL));
 			i += sizeof(codefile::LIL);
-			Output.Println(STR("local_set #{w}, {s}"), lil.Index(), Registers[lil.SrcDest]);
+			Output.Println(STR("local_set #{" LOCAL_PREFIX "}, {s}"), lil.Index, Registers[lil.SrcDest]);
 		}
 			break;
 		case codefile::OpCode::LocalGet:
@@ -169,7 +178,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 			codefile::LIL lil = {};
 			File.Read(Cast<Byte*>(&lil), sizeof(codefile::LIL));
 			i += sizeof(codefile::LIL);
-			Output.Println(STR("local_get {s}, #{w}"), Registers[lil.SrcDest], lil.Index());
+			Output.Println(STR("local_get {s}, #{" LOCAL_PREFIX "}"), Registers[lil.SrcDest], lil.Index);
 		}
 			break;
 		case codefile::OpCode::GlobalSet:
@@ -425,22 +434,32 @@ bool Dis(StreamOutput& Output, Str FilePath) {
 
 	codefile::FileHeader header{};
 	file.Read(Cast<Byte*>(&header), sizeof(codefile::FileHeader));
+	if (file.Size() != header.CheckSize)
+		return false;
 	
-	Output.Println(STR("CountOfFunctions => {u}"), IntCast<UInt>(header.CountOfFunctions));
-	Output.Println(STR("start => {u}"), IntCast<UInt>(header.EntryPoint));
+	Output.Println(STR("Attributes: {w}"), header.Attributes);
+	Output.Println(STR("Version: {w}.{w}"), header.MajorVersion, header.MinorVersion);
+	Output.Println(STR("Functions => {d}"), header.CountOfFunctions);
+	Output.Println(STR("Objects => {d}"), header.CountOfObjects);
+	Output.Println(STR("Globals => {d}"), header.CountOfGlobals);
+	Output.Println(STR("Imports => {d}"), header.CountOfImports);
+	Output.Println(STR("Exports => {d}"), header.CountOfExports);
+	Output.Println(STR("Strings => {d}"), header.CountOfExports);
+	Output.Println(STR("Start => {d}\n"), header.EntryPoint);
 
 	for (Uint32 i = 0; i < header.CountOfFunctions; i++) {
 		codefile::FunctionHeader fn = {};
 		file.Read(Cast<Byte*>(&fn), sizeof(codefile::FunctionHeader));
 
-		Output.Println(STR("{u}:"), IntCast<UInt>(i));
-		Output.Println(STR("\tAttributes: {u}"), IntCast<UInt>(fn.Attributes));
-		Output.Println(STR("\tArguments: {u}"), IntCast<UInt>(fn.Arguments));
-		Output.Println(STR("\tLocalCount: {u}"), IntCast<UInt>(fn.LocalCount));
-		Output.Println(STR("\tSizeOfCode: {u}"), IntCast<UInt>(fn.SizeOfCode));
+		Output.Println(STR("Function: -> @{d} =>"), i);
+		Output.Println(STR("\tAttributes: {d}"), fn.Attributes);
+		Output.Println(STR("\tArguments: {d}"), fn.Arguments);
+		Output.Println(STR("\tLocalCount: {d}"), fn.LocalCount);
+		Output.Println(STR("\tSizeOfCode: {d}"), fn.SizeOfCode);
 		Output.Println(STR("\t--- Code ---"));
 
 		DisCode(Output, file, fn.SizeOfCode);
+		Output.WriteArray({ '\n' });
 	}
 
 	file.Close();

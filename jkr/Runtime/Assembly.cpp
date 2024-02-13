@@ -20,6 +20,11 @@ Assembly JK_API Assembly::FromFile(Str FilePath) {
         return loadedAssembly;
     }
 
+    if (loadedAssembly.Header.EntryPoint >= loadedAssembly.Header.CountOfFunctions) {
+        loadedAssembly.Err = AsmCorruptFile;
+        return loadedAssembly;
+    }
+
     for (UInt i = 0; i < loadedAssembly.Header.CountOfFunctions; i++) {
         auto& fn = loadedAssembly.Functions.Push();
         file.Read(Cast<Byte*>(&fn.Header), sizeof(codefile::FunctionHeader));
@@ -29,6 +34,7 @@ Assembly JK_API Assembly::FromFile(Str FilePath) {
     }
 
     file.Close();
+
     return loadedAssembly;
 }
 

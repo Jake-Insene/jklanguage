@@ -99,7 +99,7 @@ void Emitter::Emit(AST::Program& Program, FileType FileTy, StreamOutput& Output)
             .CheckSize = sizeof(codefile::FileHeader),
     };
 
-    memcpy_s(header.Signature, 8, codefile::Signature, 8);
+    mem::Copy(header.Signature, codefile::Signature, 8);
     header.CountOfFunctions = (Uint32)Functions.Size();
     header.CountOfGlobals = (Uint32)Globals.Size();
 
@@ -117,22 +117,27 @@ void Emitter::Emit(AST::Program& Program, FileType FileTy, StreamOutput& Output)
     }
 
     // Calculate CheckSize
-    for (auto& [name, idx] : Functions) {
-        auto& fn = Functions.Get(idx);
+    for (auto& fn : Functions.Data) {
         header.CheckSize += Uint32(sizeof(codefile::FunctionHeader) + fn.Code.Buff.Size);
     }
 
+    // Writing
     Output.Write((Byte*)&header, sizeof(codefile::FileHeader));
     for (auto& fn : Functions.Data) {
         codefile::FunctionHeader fnHeader = {
             .Attributes = 0,
             .Arguments = fn.CountOfArguments,
-            .LocalCount = (Uint16)fn.Locals.Size(),
+            .LocalCount = (codefile::LocalType)fn.Locals.Size(),
             .SizeOfCode = (Uint32)fn.Code.Buff.Size,
         };
 
         Output.Write((Byte*)&fnHeader, sizeof(codefile::FunctionHeader));
         Output.Write((Byte*)fn.Code.Buff.Data, fn.Code.Buff.Size);
+    }
+
+    // End
+    for (auto& fn : Functions.Data) {
+        fn.Code.Destroy();
     }
 }
 
@@ -191,7 +196,7 @@ void Emitter::PreDeclareFunction(AST::Function* Fn) {
         auto& local = fn.Locals.Emplace(param.Name);
         local.Name = param.Name.c_str();
         local.Type = param.Type;
-        local.Index = (Uint16)fn.Locals.Size() - 1;
+        local.Index = (codefile::LocalType)fn.Locals.Size() - 1;
     }
 
     fn.Index = (Uint32)Functions.Size() - 1;
@@ -243,14 +248,14 @@ void Emitter::EmitFunctionReturn(AST::Return* Ret, JKFunction& Fn) {
         TypeError(Fn.Type, tmp.Type, Ret->FileName, Ret->Line);
 
         if (tmp.IsRegister()) {
-            Assembler.RRet(Fn, (Uint8)tmp.Data);
-            DeallocateRegister((Uint8)tmp.Data);
+            Assembler.RRet(Fn, tmp.Reg);
+            DeallocateRegister(tmp.Reg);
         }
         else if(tmp.IsLocal()) {
-            Assembler.LRet(Fn, (Uint16)tmp.Data);
+            Assembler.LRet(Fn, tmp.Local);
         }
         else if (tmp.IsGlobal()) {
-            Assembler.GRet(Fn, (Uint32)tmp.Data);
+            Assembler.GRet(Fn, tmp.Global);
         }
         else if (tmp.IsConstant()) {
             Uint8 reg = AllocateRegister();
@@ -571,11 +576,11 @@ TmpValue Emitter::EmitFunctionBlock(AST::Block* Block, JKFunction& Fn) {
 
 void Emitter::PushTmp(JKFunction& Fn, const TmpValue& Tmp) {
     if (Tmp.IsRegister()) {
-        Assembler.RPush(Fn, (Uint8)Tmp.Data);
-        DeallocateRegister((Uint8)Tmp.Data);
+        Assembler.RPush(Fn, Tmp.Reg);
+        DeallocateRegister(Tmp.Reg);
     }
     else if (Tmp.IsLocal()) {
-        Assembler.LPush(Fn, (Uint16)Tmp.Data);
+        Assembler.LPush(Fn, Tmp.Local);
     }
     else if (Tmp.IsConstant()) {
         if (Tmp.Type.SizeInBits == 8)
@@ -591,10 +596,10 @@ void Emitter::PushTmp(JKFunction& Fn, const TmpValue& Tmp) {
 
 void Emitter::MoveTmp(JKFunction& Fn, Uint8 Reg, const TmpValue& Tmp) {
     if (Tmp.IsRegister()) {
-        Assembler.Mov(Fn, Reg, (Uint8)Tmp.Data);
+        Assembler.Mov(Fn, Reg, Tmp.Reg);
     }
     else if (Tmp.IsLocal()) {
-        Assembler.LocalGet(Fn, Reg, (Uint16)Tmp.Data);
+        Assembler.LocalGet(Fn, Reg, Tmp.Local);
     }
     else if (Tmp.IsGlobal()) {
         Assembler.GlobalGet(Fn, Reg, (Uint32)Tmp.Data);

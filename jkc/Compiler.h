@@ -11,6 +11,10 @@ enum class ActionType {
     Disassembly,
 };
 
+enum CompilerOption {
+    OptionNone = 0,
+};
+
 struct ProfileData {
     void(*BeginAction)(Str, ActionType, bool);
     void(*EndAction)(Str, ActionType, bool);
@@ -28,19 +32,30 @@ struct Compiler {
             .Emitter = CodeGen::Emitter(ErrorStream),
             .PD = PD,
             .SourceParser = Parser::New(ErrorStream),
-            .PreParsedPrograms = List<AST::Program>::New(2)
+            .PreParsedPrograms = List<AST::Program>::New(0)
        };
     }
 
-    [[nodiscard]] constexpr bool PreSuccess(this const Compiler& Self) { return Self.PreParseSuccess; }
-
-    CompileResult CompileFromSource(this Compiler& Self, Str FileName);
+    CompileResult CompileFromSource(this Compiler& Self, Str FileName, CompilerOption Options = OptionNone);
+    CompileResult Disassembly(this Compiler& Self, Str FileName, StreamOutput& Output);
 
     void PreParse(this Compiler& Self);
 
     void Destroy(this Compiler& Self) {
         Self.PreParsedPrograms.Destroy();
         Self.SourceParser.Destroy();
+    }
+
+    constexpr void BeginAction(this Compiler& Self, Str FileName, ActionType Type, bool Error) {
+        if (Self.PD.BeginAction) {
+            Self.PD.BeginAction(FileName, Type, Error);
+        }
+    }
+
+    constexpr void EndAction(this Compiler& Self, Str FileName, ActionType Type, bool Error) {
+        if (Self.PD.EndAction) {
+            Self.PD.EndAction(FileName, Type, Error);
+        }
     }
 
     StreamOutput& ErrorStream;

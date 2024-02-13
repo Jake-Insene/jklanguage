@@ -2,10 +2,11 @@
 #include "jkr/Mem/Allocator.h"
 #include "jkr/Lib/Debug.h"
 #include "jkr/Lib/Error.h"
+#include "jkr/Lib/Complt.h"
 
 namespace mem {
 
-template<typename T>
+template<typename T, bool UseNew = true>
 struct [[nodiscard]] Ptr {
 
     static constexpr Ptr New(T* P) {
@@ -15,18 +16,27 @@ struct [[nodiscard]] Ptr {
         };
     }
 
+    template<typename T>
+    static constexpr Ptr FromPtr(const Ptr<T>& P) {
+        return Ptr{
+            .IsValid = P.IsValid,
+            .Data = P.Data,
+        };
+    }
+
     [[nodiscard]] constexpr T* operator->(this Ptr& Self) {
-        DebugAssert(Self.IsValid);
         RuntimeError(Self.IsValid, STR("Invalid pointer"));
-        return Self.Data; 
+        return Self.Data;
     }
 
     [[nodiscard]] constexpr operator bool(this Ptr& Self) { return Self.IsValid; }
 
     void Destroy(this Ptr& Self) {
         if (Self.IsValid) {
-            Self.Data->Destroy();
-            Deallocate(Cast<Address>(Self.Data), sizeof(T));
+            if constexpr (UseNew && !IsPrimitive<T>) {
+                Self.Data->Destroy();
+            }
+            Deallocate(Self.Data);
             Self.IsValid = false;
         }
     }

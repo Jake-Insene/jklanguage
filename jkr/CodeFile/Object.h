@@ -19,7 +19,7 @@ struct FieldHeader {
 };
 
 struct ObjectHeader {
-    unsigned short CountOfFields;
+    Byte CountOfFields;
     // FieldHeader Fields[CountOfFields];
 };
 

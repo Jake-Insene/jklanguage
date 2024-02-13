@@ -1,24 +1,20 @@
 #pragma once
-#include "jkr/CoreHeader.h"
+#include "jkr/CodeFile/Types.h"
 
 // codefile Opcodes
 // A instruction can't have more than 10 bytes
 // A total of 16 registers
 
-#define LOCAL_PREFIX "w"
+#define LOCAL_PREFIX "b"
 #define FUNCTION_PREFIX "d"
-#define FIELD_PREFIX "w"
+#define FIELD_PREFIX "b"
 
 namespace codefile {
 
-constexpr auto MaxLocals = 0x1FFF;
-constexpr auto MaxGlobals = 0x1FFF'FFFF;
-constexpr auto MaxStrings = 0x1FFF'FFFF;
-
-using LocalType = Uint16;
-using FunctionType = Uint32;
-using GlobalType = Uint32;
-using FieldType = Uint16;
+constexpr auto MaxLocals = 0xFF;
+constexpr auto MaxGlobals = 0xFFFF'FFFF;
+constexpr auto MaxStrings = 0xFFFF'FFFF;
+constexpr auto MaxFields = 0xFF;
 
 enum Register : Byte {
     R0 = 0,
@@ -28,6 +24,14 @@ enum Register : Byte {
     R4,
     R5,
     R6,
+    R7,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
     RMEM, // Address and memory register, used for memory instructions.
 };
 
@@ -47,12 +51,7 @@ struct CIL {
 // Local Instruction Layout
 struct LIL {
     Byte SrcDest;
-    Byte Idx1;
-    Byte Idx2;
-
-    constexpr Uint16 Index() const {
-        return ((unsigned short)(Idx1) | (Idx2 << 8));
-    }
+    Byte Index;
 };
 
 // Global Instruction Layout
@@ -78,7 +77,7 @@ enum class OpCode {
 
     // LI
     Mov,
-    // Dest register [3 bits]-[5 bits]
+    // Dest register [4 bits]-[4 bits]
     // Constant [... bits]
     Mov8,
     Mov16,
@@ -87,8 +86,8 @@ enum class OpCode {
 
     // Move the result of a previus call to the
     // specified register
-    // Dest register [3 bits]-[5 bits]
-    RMov,
+    // Dest register [4 bits]-[4 bits]
+    MovRes,
 
     // LIL
     LocalSet,
@@ -131,7 +130,7 @@ enum class OpCode {
     Call,
 
     Ret,
-    // Src register [3 bits]-[5 bits]
+    // Src register [4 bits]-[4 bits]
     RRet,
     // LIL
     LRet,
@@ -151,9 +150,9 @@ enum class OpCodeMemory {
 };
 
 enum class OpCodeStack {
-    // Src register [3 bits]
+    // Src register [4 bits]-[4 bits]
     RPush,
-    // Src local [16 bits]
+    // Src local [8 bits]
     LPush,
     // Src global [32 bits]
     GPush,
@@ -165,7 +164,7 @@ enum class OpCodeStack {
     
     PopTop,
 
-    // Dest register [3 bits]
+    // Dest register [3 bits]-[5 bits]
     RPop,
 };
 

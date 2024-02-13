@@ -15,7 +15,7 @@ Stack Stack::New(USize StackSize) {
 }
 
 void Stack::Destroy(this Stack& Self) {
-    mem::Deallocate(Cast<Address>(Self.Start), Self.Size * sizeof(Value));
+    mem::Deallocate(Self.Start);
 }
 
 }

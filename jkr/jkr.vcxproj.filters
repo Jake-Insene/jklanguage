@@ -93,18 +93,15 @@
     <ClInclude Include="Mem\Allocator.h">
       <Filter>Archivos de origen</Filter>
     </ClInclude>
+    <ClInclude Include="CodeFile\Types.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="IO\File.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
-    <ClCompile Include="Impl\Win32\IO\Win32File.cpp">
-      <Filter>Archivos de origen</Filter>
-    </ClCompile>
     <ClCompile Include="Mem\Allocator.cpp">
-      <Filter>Archivos de origen</Filter>
-    </ClCompile>
-    <ClCompile Include="Impl\Win32\Mem\Win32Allocator.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
     <ClCompile Include="Runtime\Stack.cpp">
@@ -122,13 +119,16 @@
     <ClCompile Include="Runtime\Assembly.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
-    <ClCompile Include="Lib\String.cpp">
-      <Filter>Archivos de origen</Filter>
-    </ClCompile>
     <ClCompile Include="Lib\Error.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
-    <ClCompile Include="Impl\Win32\Common\Win32Error.cpp">
+    <ClCompile Include="Impl\Win32\Win32File.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="Impl\Win32\Win32Allocator.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="Impl\Win32\Win32Error.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
   </ItemGroup>

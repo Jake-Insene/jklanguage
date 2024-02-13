@@ -24,21 +24,22 @@ static inline std::vector<Char> ReadFileContent(StreamOutput &ErrorStream, Str F
     return content;
 }
 
-CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName) {
-    Self.PD.BeginAction(FileName, ActionType::Parsing, false);
+CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName, CompilerOption /*Options*/) {
     std::vector<Char> content = ReadFileContent(Self.ErrorStream, FileName);
     if (content.size() == 0)
         return CompileResult(false);
 
     Slice<Char> fileContent = Slice<Char>(content.data(), content.size());
 
+    // Parsing
     CompileResult result{};
+    Self.BeginAction(FileName, ActionType::Parsing, false);
     AST::Program program = Self.SourceParser.ParseContent(FileName, fileContent);
     if (!Self.SourceParser.Success()) {
         result.Success = false;
         return result;
     }
-    Self.PD.EndAction(FileName, ActionType::Parsing, !Self.SourceParser.Success());
+    Self.EndAction(FileName, ActionType::Parsing, !Self.SourceParser.Success());
 
     Self.PreParse();
     AST::InsertPrograms(program, Self.PreParsedPrograms);
@@ -48,9 +49,10 @@ CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName) {
     outputFile = outputFile.substr(0, outputFile.find_last_of('.'));
     outputFile += STR(".jk");
 
-    io::File file = io::File::Open(Cast<Str>(outputFile.c_str()), io::FileWrite | io::FileBinary);
+    // CodeGen
+    io::File file = io::File::Open(outputFile.c_str(), io::FileWrite | io::FileBinary);
 
-    Self.PD.BeginAction(FileName, ActionType::CodeGen, false);
+    Self.BeginAction(FileName, ActionType::CodeGen, false);
     Self.Emitter.Emit(program, CodeGen::FileType::Executable, file);
     program.Destroy();
     if (!Self.Emitter.Success) {
@@ -58,26 +60,25 @@ CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName) {
         file.Close();
         return result;
     }
-    Self.PD.EndAction(FileName, ActionType::CodeGen, false);
+    Self.EndAction(FileName, ActionType::CodeGen, false);
 
     file.Close();
 
-    std::u8string disFile = outputFile.substr(0, outputFile.find_last_of('.'));
-    disFile += STR(".jks");
-
-    io::File dis = io::File::Open(disFile.c_str(), io::FileWrite | io::FileBinary);
-
-    Self.PD.BeginAction(FileName, ActionType::Disassembly, false);
-    if (!CodeGen::Dis(dis, outputFile.c_str())) {
-        result.Success = false;
-        dis.Close();
-        return result;
-    }
-    Self.PD.EndAction(FileName, ActionType::Disassembly, false);
-
-    dis.Close();
-
     return result;
+}
+
+CompileResult Compiler::Disassembly(this Compiler& Self, Str FileName, StreamOutput& Output) {
+    bool success = true;
+
+    Self.BeginAction(FileName, ActionType::Disassembly, false);
+    if (!CodeGen::Dis(Output, FileName)) {
+        success = false;
+    }
+    Self.EndAction(FileName, ActionType::Disassembly, false);
+
+    return CompileResult{
+        .Success = success,
+    };
 }
 
 Str BuiltinFiles[] = {

@@ -4,7 +4,7 @@
 namespace mem {
     [[nodiscard]] Address JK_API Allocate(USize Size);
 
-    void JK_API Deallocate(Address Mem, USize Size);
+    void JK_API Deallocate(Address Mem);
 
     template<typename T>
     static inline T* CountOf(USize Count) {

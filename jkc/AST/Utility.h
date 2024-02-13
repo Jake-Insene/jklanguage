@@ -29,7 +29,8 @@ constexpr void InsertPrograms(AST::Program& TargetProgram, List<AST::Program>& P
         auto start = pro.Statements.begin();
         auto end = pro.Statements.end();
         while (--end != start - 1) {
-            TargetProgram.Statements.Insert(0, std::move(*end));
+            TargetProgram.Statements.Insert(0, *end);
+            *end = mem::Ptr<Statement>::New(nullptr);
         }
     }
 }
