@@ -1,5 +1,5 @@
 #pragma once
-#include "jkr/CodeFile/Types.h"
+#include "jkr/CodeFile/OperandTypes.h"
 
 namespace codefile {
 

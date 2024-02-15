@@ -1,5 +1,5 @@
 #pragma once
-#include "jkr/CoreHeader.h"
+#include "jkc/Lexer/Token.h"
 
 namespace AST {
 
@@ -24,21 +24,26 @@ enum class StatementType {
     ExpresionStatement,
 };
 
+enum StatementAttributes {
+    AttributeNone,
+    AttributeIntrinsec,
+    AttributeInternal,
+    AttributeNative,
+};
+
 struct Statement {
 
-    static constexpr Statement New(StatementType Type, Str FileName, USize Line) {
+    static constexpr Statement New(StatementType Type, const SourceLocation& Location) {
         return Statement{
             .Type = Type,
-            .FileName = FileName,
-            .Line = Line,
+            .Location = Location,
         };
     }
 
     void Destroy(this Statement& Self);
 
     StatementType Type;
-    Str FileName;
-    USize Line;
+    SourceLocation Location;
 };
 
 }

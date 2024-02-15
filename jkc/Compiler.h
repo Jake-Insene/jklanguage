@@ -36,15 +36,12 @@ struct Compiler {
        };
     }
 
-    CompileResult CompileFromSource(this Compiler& Self, Str FileName, CompilerOption Options = OptionNone);
+    CompileResult CompileFromSource(this Compiler& Self, Str FileName, CodeGen::EmitOptions Options);
     CompileResult Disassembly(this Compiler& Self, Str FileName, StreamOutput& Output);
 
     void PreParse(this Compiler& Self);
 
-    void Destroy(this Compiler& Self) {
-        Self.PreParsedPrograms.Destroy();
-        Self.SourceParser.Destroy();
-    }
+    void Destroy(this Compiler& Self);
 
     constexpr void BeginAction(this Compiler& Self, Str FileName, ActionType Type, bool Error) {
         if (Self.PD.BeginAction) {

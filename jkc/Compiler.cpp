@@ -24,7 +24,7 @@ static inline std::vector<Char> ReadFileContent(StreamOutput &ErrorStream, Str F
     return content;
 }
 
-CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName, CompilerOption /*Options*/) {
+CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName, CodeGen::EmitOptions Options) {
     std::vector<Char> content = ReadFileContent(Self.ErrorStream, FileName);
     if (content.size() == 0)
         return CompileResult(false);
@@ -53,12 +53,15 @@ CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName, Com
     io::File file = io::File::Open(outputFile.c_str(), io::FileWrite | io::FileBinary);
 
     Self.BeginAction(FileName, ActionType::CodeGen, false);
-    Self.Emitter.Emit(program, CodeGen::FileType::Executable, file);
+    Self.Emitter.Emit(
+        program, 
+        CodeGen::FileType::Executable,
+        Options,
+        file
+    );
     program.Destroy();
     if (!Self.Emitter.Success) {
         result.Success = false;
-        file.Close();
-        return result;
     }
     Self.EndAction(FileName, ActionType::CodeGen, false);
 
@@ -113,4 +116,9 @@ void Compiler::PreParse(this Compiler& Self) {
 
     if (!Self.PreParseSuccess)
         Self.ErrorStream.Println(STR("Error: Error parsing builtin files"));
+}
+
+void Compiler::Destroy(this Compiler& Self) {
+    Self.PreParsedPrograms.Destroy();
+    Self.SourceParser.Destroy();
 }

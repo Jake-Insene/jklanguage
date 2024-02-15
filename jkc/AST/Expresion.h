@@ -1,5 +1,5 @@
 #pragma once
-#include "jkr/CoreHeader.h"
+#include "jkc/Lexer/Token.h"
 
 namespace AST {
 
@@ -30,19 +30,17 @@ enum class ExpresionType {
 
 struct Expresion {
 
-    static constexpr Expresion New(ExpresionType Type, Str FileName, USize Line) {
+    static constexpr Expresion New(ExpresionType Type, const SourceLocation& Location) {
         return Expresion{
             .Type = Type,
-            .FileName = FileName,
-            .Line = Line,
+            .Location = Location,
         };
     }
 
     void Destroy(this Expresion& Self);
 
     ExpresionType Type;
-    Str FileName;
-    USize Line;
+    SourceLocation Location;
 };
 
 }

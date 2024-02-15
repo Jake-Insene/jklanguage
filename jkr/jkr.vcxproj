@@ -23,7 +23,8 @@
     <ClInclude Include="CodeFile\Header.h" />
     <ClInclude Include="CodeFile\OpCodes.h" />
     <ClInclude Include="CodeFile\Object.h" />
-    <ClInclude Include="CodeFile\Types.h" />
+    <ClInclude Include="CodeFile\OperandTypes.h" />
+    <ClInclude Include="CodeFile\Type.h" />
     <ClInclude Include="Lib\Complt.h" />
     <ClInclude Include="Lib\List.h" />
     <ClInclude Include="Lib\Error.h" />

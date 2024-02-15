@@ -1,13 +1,21 @@
 
-
-fn Fact(Num: int) int {
+fn Fact(Num : int) int {
     if(Num == 0) {
         return 1;
     }
-
     return Num * Fact(Num - 1);
 }
 
+fn Sum(A: int, B: int) int {
+    return A + B;
+}
+
+fn Square(Num: int) int {
+    return Num;
+}
+
+fn Print(Format: []const byte, Args: any) void;
+
 fn Main() int {
-    return Fact(50);
+    return "";
 }

@@ -78,29 +78,29 @@ public:
         }
 
         if (Flags & Const) {
-            str += "const";
+            str += "const ";
         }
 
         switch (Primitive) {
-        case AST::TypeDecl::Type::Unknown:
+        case Type::Unknown:
             str += "<InvalidType>";
             break;
-        case AST::TypeDecl::Type::Void:
+        case Type::Void:
             str += "void";
             break;
-        case AST::TypeDecl::Type::Any:
+        case Type::Any:
             str += "any";
             break;
-        case AST::TypeDecl::Type::Byte:
+        case Type::Byte:
             str += "byte";
             break;
-        case AST::TypeDecl::Type::Int:
+        case Type::Int:
             str += "int";
             break;
-        case AST::TypeDecl::Type::UInt:
+        case Type::UInt:
             str += "uint";
             break;
-        case AST::TypeDecl::Type::Float:
+        case Type::Float:
             str += "float";
             break;
         }

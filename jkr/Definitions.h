@@ -37,9 +37,20 @@
     #define JK_API JK_IMPORT
 #endif // JK_BUILD
 
+#define PACK(STRUCT) \
+    __pragma(pack(push, 1)) \
+    STRUCT \
+    __pragma(pack(pop))
+
 #ifdef _MSVC_LANG
     #define UNREACHABLE __assume(true)
 #else
     #define UNREACHABLE
 #endif // _MSVC_LANG
+
+inline constexpr Byte Const4Max = 0xF;
+inline constexpr Byte ByteMax = 0xFF;
+inline constexpr Int IntMax = 0xFFFF'FFFF'FFFF'FFFF;
+inline constexpr UInt UIntMax = UInt(-1);
+inline constexpr Float FloatMax = 1.7976931348623158e+308;
 

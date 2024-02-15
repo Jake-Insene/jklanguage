@@ -1,5 +1,4 @@
 #pragma once
-
 #include "jkc/Lexer/Token.h"
 #include "jkc/Utility/Slice.h"
 #include "jkc/Utility/File.h"

@@ -13,10 +13,6 @@ struct [[nodiscard]] ThreadExecution {
 
     void ExecCommon(this ThreadExecution& Self, const  Function& Fn, codefile::OpCode C, 
                     StackFrame& Frame, UInt& IP);
-    void ExecStack(this ThreadExecution& Self, const Function& Fn, codefile::OpCodeStack S, 
-                    StackFrame& Frame, UInt& IP);
-    void ExecMemory(this ThreadExecution& Self, const  Function& Fn, codefile::OpCodeMemory M, 
-                    StackFrame& Frame, UInt& IP);
 
     void Destroy(this ThreadExecution& Self);
 

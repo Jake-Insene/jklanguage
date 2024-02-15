@@ -18,26 +18,53 @@ enum class TmpType {
     Err,
     Register,
     Local,
+    LocalReg,
     Global,
     Constant,
 };
 
+enum DebugLevel {
+    DBG_NONE,
+    DBG_NORMAL,
+};
+
+enum Optimization {
+    OPTIMIZATION_NONE,
+    OPTIMIZATION_RELEASE_FAST,
+    OPTIMIZATION_RELEASE_SMALL,
+};
+
+struct EmitOptions {
+    DebugLevel Debug;
+    Optimization OptimizationLevel;
+};
+
+struct Constant {
+    AST::TypeDecl Type = {};
+    union {
+        Int Signed = 0;
+        UInt Unsigned;
+        Float Real;
+    };
+};
+
 struct [[nodiscard]] TmpValue {
-    TmpType Ty;
+    TmpType Ty = TmpType::Err;
 
     union {
         Byte Reg;
         codefile::LocalType Local;
         codefile::GlobalType Global;
         Float Real;
-        UInt Data;
+        UInt Data = 0;
     };
-    AST::TypeDecl Type;
-    AST::BinaryOperation LastOp;
+    AST::TypeDecl Type = {};
+    AST::BinaryOperation LastOp = (AST::BinaryOperation)-1;
 
     [[nodiscard]] constexpr bool IsErr() const { return Ty == TmpType::Err; }
     [[nodiscard]] constexpr bool IsRegister() const { return Ty == TmpType::Register; }
     [[nodiscard]] constexpr bool IsLocal() const { return Ty == TmpType::Local; }
+    [[nodiscard]] constexpr bool IsLocalReg() const { return Ty == TmpType::LocalReg; }
     [[nodiscard]] constexpr bool IsGlobal() const { return Ty == TmpType::Global; }
     [[nodiscard]] constexpr bool IsConstant() const { return Ty == TmpType::Constant; }
 };
@@ -49,12 +76,12 @@ struct Emitter {
 
     ~Emitter() {}
 
-    void Emit(AST::Program& Program, FileType FileTy, StreamOutput& Output);
+    void Emit(AST::Program& Program, FileType FileTy, EmitOptions Options, StreamOutput& Output);
 
-    void Error(Str FileName, USize Line, Str Format, ...);
-
-    void TypeError(const AST::TypeDecl& LHS, const AST::TypeDecl& RHS, Str FileName, USize Line);
-
+    void Warn(const SourceLocation& Location, Str Format, ...);
+    void Error(const SourceLocation& Location, Str Format, ...);
+    void TypeError(const AST::TypeDecl& LHS, const AST::TypeDecl& RHS,
+                   const SourceLocation& Location, Str Format, ...);
     void GlobalError(Str Format, ...);
     
     void PreDeclareStatement(mem::Ptr<AST::Statement>& Stat);
@@ -65,27 +92,30 @@ struct Emitter {
     void EmitStatement(mem::Ptr<AST::Statement>& Stat);
     void EmitFunction(AST::Function* ASTFn);
     
-    void EmitFunctionStatement(mem::Ptr<AST::Statement>& Stat, JKFunction& Fn);
-    void EmitFunctionReturn(AST::Return* Ret, JKFunction& Fn);
-    void EmitFunctionLocal(AST::Var* Var, JKFunction& Fn);
-    void EmitFunctionConstVal(AST::ConstVal* ConstVal, JKFunction& Fn);
-    void EmitFunctionIf(AST::If* ConstVal, JKFunction& Fn);
+    void EmitFunctionStatement(mem::Ptr<AST::Statement>& Stat, Function& Fn);
+    void EmitFunctionReturn(AST::Return* Ret, Function& Fn);
+    void EmitFunctionLocal(AST::Var* Var, Function& Fn);
+    void EmitFunctionConstVal(AST::ConstVal* ConstVal, Function& Fn);
+    void EmitFunctionIf(AST::If* ConstVal, Function& Fn);
 
-    TmpValue GetID(const std::u8string& ID, JKFunction& Fn, Str FileName, USize Line);
-    JKFunction* GetFn(mem::Ptr<AST::Expresion>& Target);
+    TmpValue GetID(const std::u8string& ID, Function& Fn, const SourceLocation& Location);
+    Function* GetFn(mem::Ptr<AST::Expresion>& Target);
 
-    TmpValue EmitFunctionExpresion(mem::Ptr<AST::Expresion>& Expr, JKFunction& Fn);
-    TmpValue EmitFunctionConstant(AST::Constant* Constant, JKFunction& Fn);
-    TmpValue EmitFunctionIdentifier(AST::Identifier* ID, JKFunction& Fn);
-    TmpValue EmitFunctionCall(AST::Call* Call, JKFunction& Fn);
-    TmpValue EmitFunctionBinaryOp(AST::BinaryOp* BinOp, JKFunction& Fn);
-    TmpValue EmitFunctionUnary(AST::Unary* Unary, JKFunction& Fn);
-    TmpValue EmitFunctionDot(AST::Dot* Dot, JKFunction& Fn);
-    TmpValue EmitFunctionArrayList(AST::ArrayList* ArrayList, JKFunction& Fn);
-    TmpValue EmitFunctionBlock(AST::Block* Block, JKFunction& Fn);
+    TmpValue EmitFunctionExpresion(mem::Ptr<AST::Expresion>& Expr, Function& Fn);
+    TmpValue EmitFunctionConstant(AST::Constant* Constant, Function& Fn);
+    TmpValue EmitFunctionIdentifier(AST::Identifier* ID, Function& Fn);
+    TmpValue EmitFunctionCall(AST::Call* Call, Function& Fn);
+    
+    TmpValue EmitFunctionBinaryOp(AST::BinaryOp* BinOp, Function& Fn);
+    TmpValue EmitBinaryOp(TmpValue& Left, TmpValue& Right, AST::BinaryOperation Op, Function& Fn);
 
-    void PushTmp(JKFunction& Fn, const TmpValue& Tmp);
-    void MoveTmp(JKFunction& Fn, Uint8 Reg, const TmpValue& Tmp);
+    TmpValue EmitFunctionUnary(AST::Unary* Unary, Function& Fn);
+    TmpValue EmitFunctionDot(AST::Dot* Dot, Function& Fn);
+    TmpValue EmitFunctionArrayList(AST::ArrayList* ArrayList, Function& Fn);
+    TmpValue EmitFunctionBlock(AST::Block* Block, Function& Fn);
+
+    void PushTmp(Function& Fn, const TmpValue& Tmp);
+    void MoveTmp(Function& Fn, Uint8 Reg, const TmpValue& Tmp);
 
     Uint8 AllocateRegister() {
         for (auto& r : Registers) {
@@ -105,8 +135,9 @@ struct Emitter {
 
     StreamOutput& ErrorStream;
     bool Success = true;
+    EmitOptions CurrentOptions;
 
-    JKRAssembler Assembler;
+    Assembler CodeAssembler;
 
     RegisterInfo Registers[15] = {
         {0, false},
@@ -126,8 +157,9 @@ struct Emitter {
         {14, false },
     };
 
-    SymbolTable<JKFunction> Functions;
-    SymbolTable<JKGlobal> Globals;
+    SymbolTable<Function> Functions;
+    SymbolTable<Global> Globals;
+    SymbolTable<Constant> Constants;
 };
 
 }

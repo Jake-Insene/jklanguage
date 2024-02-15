@@ -22,6 +22,7 @@ static IdentifierInfo Identifiers[] = {
         {.Len = 3, .Str = "any", .Type = TokenType::TypeAny },
         {.Len = 4, .Str = "void", .Type = TokenType::TypeVoid },
         {.Len = 4, .Str = "byte", .Type = TokenType::TypeByte },
+        {.Len = 4, .Str = "bool", .Type = TokenType::TypeByte },
         {.Len = 3, .Str = "int", .Type = TokenType::TypeInt },
         {.Len = 4, .Str = "uint", .Type = TokenType::TypeUInt },
         {.Len = 5, .Str = "float", .Type = TokenType::TypeFloat },
@@ -108,6 +109,7 @@ Token Lexer::GetString() {
 }
 
 Token Lexer::GetNext(this Lexer& Self) {
+start:
     Token tk{};
 
     Self.SkipWhiteSpace();
@@ -192,6 +194,11 @@ Token Lexer::GetNext(this Lexer& Self) {
     case '/':
         if (Self.GetOffset(1) == '=')
             Self.MakeTwo(TokenType::SlashEqual, tk);
+        else if (Self.GetOffset(1) == '/') {
+            while (Self.Current != '\n')
+                Self.Advance();
+            goto start;
+        }
         else
             Self.MakeSimple(TokenType::Slash, tk);
         break;
@@ -211,7 +218,10 @@ Token Lexer::GetNext(this Lexer& Self) {
             tk = Self.GetDigit();
         }
         else {
-            Self.ErrorStream.Println(STR("{s}:{u}:\n\tError: Unexpected character {c}"), Self.FileName, Self.Line, Self.Current);
+            Self.ErrorStream.Println(
+                STR("{s}:{u}: Error: Unexpected character {c}"), 
+                Self.FileName, Self.Line, Self.Current
+            );
             Self.IsPanicMode = true;
             Self.Advance();
         }

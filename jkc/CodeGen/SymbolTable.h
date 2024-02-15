@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <string>
 #include <vector>
+#include <assert.h>
 
 template<typename T>
 struct SymbolTable {

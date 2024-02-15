@@ -93,7 +93,10 @@
     <ClInclude Include="Mem\Allocator.h">
       <Filter>Archivos de origen</Filter>
     </ClInclude>
-    <ClInclude Include="CodeFile\Types.h">
+    <ClInclude Include="CodeFile\OperandTypes.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="CodeFile\Type.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
   </ItemGroup>

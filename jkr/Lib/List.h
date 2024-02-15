@@ -90,6 +90,17 @@ struct [[nodiscard]] List {
         Self.Capacity = NewSize;
     }
 
+    constexpr bool Contains(this List& Self, T Value) {
+        if constexpr (IsPrimitive<T>) {
+            for (auto& e : Self) {
+                if (e == Value)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     constexpr void Clear(this List& Self) {
         Self.Deconstruct();
 

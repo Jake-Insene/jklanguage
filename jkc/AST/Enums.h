@@ -7,14 +7,14 @@ enum class BinaryOperation {
     Assignment,
 
     Add,
-    AddEqual,
     Inc,
     Sub,
-    SubEqual,
     Dec,
     Mul,
-    MulEqual,
     Div,
+    AddEqual,
+    SubEqual,
+    MulEqual,
     DivEqual,
     
     Comparision,

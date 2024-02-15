@@ -1,5 +1,4 @@
 #pragma once
-
 #include "jkc/Lexer/Lexer.h"
 #include "jkc/AST/Program.h"
 #include "jkc/AST/Type.h"
@@ -73,16 +72,7 @@ struct Parser {
         }
     }
 
-    void ErrorAtCurrent(Str Format, ...) {
-        ErrorStream.Print(STR("{s}:{u}\n\tError: "), Current.Location.FileName, Current.Location.Line);
-        va_list args;
-        va_start(args, Format);
-        ErrorStream.PrintlnVa(Format, args);
-        va_end(args);
-
-        IsPanicMode = true;
-        MustSyncronize = true;
-    }
+    void ErrorAtCurrent(Str Format, ...);
 
     constexpr bool Expected(TokenType Type, Str Format, ...) {
         if (Current.Type != Type) {

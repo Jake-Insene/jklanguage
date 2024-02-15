@@ -1,6 +1,4 @@
 
 #intrinsec
-fn copy(dest: *byte, src: *byte, size: usize) void;
+fn copy(dest: any, src: any, size: usize) void;
 
-#native("JKR")
-fn copy(dest: *byte, src: *byte, size: usize) void;

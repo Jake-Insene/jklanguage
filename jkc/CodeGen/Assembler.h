@@ -8,63 +8,91 @@
 
 namespace CodeGen {
 
-struct [[nodiscard]] JKLocal {
-    Str Name;
-    AST::TypeDecl Type;
-    codefile::LocalType Index;
+struct [[nodiscard]] Local {
+    Str Name = STR("");
+    AST::TypeDecl Type = {};
+    union {
+        codefile::LocalType Index = 0;
+        Byte Reg;
+    };
+    bool IsInitialized = false;
+    bool IsRegister = false;
 };
 
-struct [[nodiscard]] JKGlobal {
-    Str Name;
-    AST::TypeDecl Type;
-    codefile::GlobalType Index;
+struct [[nodiscard]] Global {
+    Str Name = STR("");
+    AST::TypeDecl Type = {};
+    codefile::GlobalType Index = 0;
 };
 
-struct [[nodiscard]] JKFunction {
-    Str Name;
-    AST::TypeDecl Type;
-    MemoryBuffer Code;
-    Byte CountOfArguments;
-    SymbolTable<JKLocal> Locals;
-    codefile::FunctionType Index;
+enum class CallConv {
+    Stack,
+    // The maximum size of arguments is 10 and there are put bettwen the r1-r10 register
+    // And the return value if put in the r0 register
+    Register,
+    // The maximum size of arguments is 32, the first 10 arguments are putted bettwen the r1-r10 register
+    // and the rest are putted in the stack from right to left
+    // And the return value if put in the r0 register
+    RegS,
+};
+
+struct [[nodiscard]] Function {
+    Str Name = STR("");
+    AST::TypeDecl Type = {};
+    MemoryBuffer Code = {};
+    SymbolTable<Local> Locals = {};
+    Byte CountOfArguments = 0;
+    Byte RegisterArguments = 0;
+    Byte StackArguments = 0;
+    Byte CountOfStackLocals = 0;
+    codefile::FunctionType Index = 0;
+    bool IsDefined = false;
+    CallConv CC = CallConv::Stack;
 
     struct {
-        Str Entry;
-        Str Library;
+        Str Entry = STR("");
+        Str Library = STR("");
     } NativeInfo;
 };
 
 struct RegisterInfo {
-    Byte Index;
-    bool IsAllocated;
+    Byte Index = 0;
+    bool IsAllocated = false;
 };
 
-struct JKRAssembler {
+struct Assembler {
+    Assembler() {}
+    ~Assembler() {}
 
-    JKRAssembler() {}
-
-    ~JKRAssembler() {}
-
-    constexpr void Brk(this JKRAssembler& /*Self*/, JKFunction& Fn) { Fn.Code << (Byte)codefile::OpCode::Brk; }
+    constexpr void Brk(this Assembler& /*Self*/, Function& Fn) { Fn.Code << (Byte)codefile::OpCode::Brk; }
     
-    constexpr void LI(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest, Byte Src) {
-        codefile::LI li = {
+    constexpr void BIL(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Src) {
+        codefile::MIL bil = {
             .Dest = Dest,
             .Src = Src,
         };
-        Fn.Code.Write((Byte*)&li, sizeof(codefile::LI));
+        Fn.Code.Write((Byte*)&bil, sizeof(codefile::MIL));
     }
 
-    constexpr void CIL(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void MIL(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Src) {
+        codefile::MIL mil = {
+            .Dest = Dest,
+            .Src = Src,
+        };
+        Fn.Code.Write((Byte*)&mil, sizeof(codefile::MIL));
+    }
+
+    constexpr void CIL(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Src1, Byte Src2, Byte Extra = 0) {
         codefile::CIL cil = {
             .Dest = Dest,
             .Src1 = Src1,
-            .Src2 = Src2
+            .Src2 = Src2,
+            .Extra = Extra,
         };
         Fn.Code.Write((Byte*)&cil, sizeof(codefile::CIL));
     }
 
-    constexpr void LIL(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::LocalType Idx, Byte SrcDest) {
+    constexpr void LIL(this Assembler& /*Self*/, Function& Fn, codefile::LocalType Idx, Byte SrcDest) {
         codefile::LIL lil = {
             .SrcDest = SrcDest,
             .Index = Idx,
@@ -72,223 +100,376 @@ struct JKRAssembler {
         Fn.Code.Write((Byte*)&lil, sizeof(codefile::LIL));
     }
 
-    constexpr void GIL(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::GlobalType Idx, Byte SrcDest) {
+    constexpr void GIL(this Assembler& /*Self*/, Function& Fn, codefile::GlobalType Idx, Byte SrcDest) {
         codefile::GIL gil = {
             .SrcDest = SrcDest,
+            .Index = Idx,
         };
-        *(Uint32*)&gil.Idx1 = Idx;
      
         Fn.Code.Write((Byte*)&gil, sizeof(codefile::GIL));
     }
 
-    constexpr void LocalSet(this JKRAssembler& Self, JKFunction& Fn, Byte Src, codefile::LocalType Idx) {
+    constexpr void LocalSet4(this Assembler& /*Self*/, Function& Fn, Byte Src, Byte Idx) {
+        Fn.Code << (Byte)codefile::OpCode::LocalSet4;
+        Fn.Code << Byte(Src | (Idx >> 4));
+    }
+
+    constexpr void LocalGet4(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Idx) {
+        Fn.Code << (Byte)codefile::OpCode::LocalGet4;
+        Fn.Code << Byte(Dest | (Idx >> 4));
+    }
+
+    constexpr void LocalSet(this Assembler& Self, Function& Fn, Byte Src, codefile::LocalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::LocalSet;
         Self.LIL(Fn, Idx, Src);
     }
     
-    constexpr void LocalGet(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, codefile::LocalType Idx) {
+    constexpr void LocalGet(this Assembler& Self, Function& Fn, Byte Dest, codefile::LocalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::LocalGet;
         Self.LIL(Fn, Idx, Dest);
     }
 
-    constexpr void GlobalSet(this JKRAssembler& Self, JKFunction& Fn, Byte Src, codefile::GlobalType Idx) {
+    constexpr void GlobalSet(this Assembler& Self, Function& Fn, Byte Src, codefile::GlobalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::GlobalSet;
         Self.GIL(Fn, Idx, Src);
     }
 
-    constexpr void GlobalGet(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, codefile::GlobalType Idx) {
+    constexpr void GlobalGet(this Assembler& Self, Function& Fn, Byte Dest, codefile::GlobalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::GlobalGet;
         Self.GIL(Fn, Idx, Dest);
     }
 
-    constexpr void Mov(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src) {
+    constexpr void Mov(this Assembler& Self, Function& Fn, Byte Dest, Byte Src) {
         Fn.Code << (Byte)codefile::OpCode::Mov;
-        Self.CIL(Fn, Dest, Src, 0);
+        Self.MIL(Fn, Dest, Src);
     }
 
-    constexpr void Mov8(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest, Byte Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov8;
+    constexpr void Const4(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Const) {
+        Fn.Code << (Byte)codefile::OpCode::Const4;
+        Fn.Code << (Byte)(Dest | (Const << 4));
+    }
+
+    constexpr void Const8(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Const) {
+        Fn.Code << (Byte)codefile::OpCode::Const8;
         Fn.Code << Dest;
         Fn.Code << Const;
     }
 
-    constexpr void Mov16(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest, Uint16 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov16;
+    constexpr void Const16(this Assembler& /*Self*/, Function& Fn, Byte Dest, Uint16 Const) {
+        Fn.Code << (Byte)codefile::OpCode::Const16;
         Fn.Code << Dest;
         Fn.Code << Const;
     }
 
-    constexpr void Mov32(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest, Uint32 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov32;
+    constexpr void Const32(this Assembler& /*Self*/, Function& Fn, Byte Dest, Uint32 Const) {
+        Fn.Code << (Byte)codefile::OpCode::Const32;
         Fn.Code << Dest;
         Fn.Code << Const;
     }
 
-    constexpr void Mov64(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest, Uint64 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov64;
+    constexpr void Const64(this Assembler& /*Self*/, Function& Fn, Byte Dest, Uint64 Const) {
+        Fn.Code << (Byte)codefile::OpCode::Const64;
         Fn.Code << Dest;
         Fn.Code << Const;
     }
 
-    constexpr void RMov(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest) {
+    constexpr void MovRes(this Assembler& /*Self*/, Function& Fn, Byte Dest) {
         Fn.Code << (Byte)codefile::OpCode::MovRes;
         Fn.Code << Dest;
     }
 
-    constexpr void Add(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void Inc(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
+        Fn.Code << (Byte)codefile::OpCode::Inc;
+        Fn.Code << Reg;
+    }
+
+    constexpr void IInc(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
+        Fn.Code << (Byte)codefile::OpCode::IInc;
+        Fn.Code << Reg;
+    }
+
+    constexpr void FInc(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
+        Fn.Code << (Byte)codefile::OpCode::FInc;
+        Fn.Code << Reg;
+    }
+
+    constexpr void Dec(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
+        Fn.Code << (Byte)codefile::OpCode::Dec;
+        Fn.Code << Reg;
+    }
+
+    constexpr void IDec(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
+        Fn.Code << (Byte)codefile::OpCode::IDec;
+        Fn.Code << Reg;
+    }
+
+    constexpr void FDec(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
+        Fn.Code << (Byte)codefile::OpCode::FDec;
+        Fn.Code << Reg;
+    }
+
+    constexpr void Add(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::Add;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void IAdd(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void Add8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Add8;
+        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
+    }
+
+    constexpr void Add16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Add16;
+        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
+        Fn.Code << Byte(Constant >> 8);
+    }
+
+    constexpr void IAdd(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::IAdd;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void FAdd(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void IAdd8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::IAdd8;
+        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
+    }
+
+    constexpr void IAdd16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::IAdd16;
+        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
+        Fn.Code << Byte(Constant >> 8);
+    }
+
+    constexpr void FAdd(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::FAdd;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void Sub(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void Sub(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::Sub;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void ISub(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void Sub8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Sub8;
+        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
+    }
+
+    constexpr void Sub16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Sub16;
+        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
+        Fn.Code << Byte(Constant >> 8);
+    }
+
+    constexpr void ISub(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::ISub;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void FSub(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void ISub8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::ISub8;
+        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
+    }
+
+    constexpr void ISub16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::ISub16;
+        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
+        Fn.Code << Byte(Constant >> 8);
+    }
+
+    constexpr void FSub(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::FSub;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void Mul(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void Mul(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::Mul;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void IMul(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void Mul8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Mul8;
+        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
+    }
+
+    constexpr void Mul16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Mul16;
+        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
+        Fn.Code << Byte(Constant >> 8);
+    }
+
+    constexpr void IMul(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::IMul;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void FMul(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void IMul8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::IMul8;
+        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
+    }
+
+    constexpr void IMul16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::IMul16;
+        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
+        Fn.Code << Byte(Constant >> 8);
+    }
+
+    constexpr void FMul(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::FMul;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void Div(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void Div(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::Div;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void IDiv(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void Div8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Div8;
+        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
+    }
+
+    constexpr void Div16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Div16;
+        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
+        Fn.Code << Byte(Constant >> 8);
+    }
+
+    constexpr void IDiv(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::IDiv;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void FDiv(this JKRAssembler& Self, JKFunction& Fn, Byte Dest, Byte Src1, Byte Src2) {
+    constexpr void IDiv8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::IDiv16;
+        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
+    }
+
+    constexpr void IDiv16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::IDiv16;
+        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
+        Fn.Code << Byte(Constant >> 8);
+    }
+
+    constexpr void FDiv(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
         Fn.Code << (Byte)codefile::OpCode::FDiv;
         Self.CIL(Fn, Dest, Src1, Src2);
     }
 
-    constexpr void Cmp(this JKRAssembler& Self, JKFunction& Fn, Byte L, Byte R) {
+    constexpr void Cmp(this Assembler& Self, Function& Fn, Byte L, Byte R) {
         Fn.Code << (Byte)codefile::OpCode::Cmp;
-        Self.LI(Fn, L, R);
+        Self.BIL(Fn, L, R);
     }
 
-    constexpr void ICmp(this JKRAssembler& Self, JKFunction& Fn, Byte L, Byte R) {
+    constexpr void ICmp(this Assembler& Self, Function& Fn, Byte L, Byte R) {
         Fn.Code << (Byte)codefile::OpCode::ICmp;
-        Self.LI(Fn, L, R);
+        Self.BIL(Fn, L, R);
     }
 
-    constexpr void FCmp(this JKRAssembler& Self, JKFunction& Fn, Byte L, Byte R) {
+    constexpr void FCmp(this Assembler& Self, Function& Fn, Byte L, Byte R) {
         Fn.Code << (Byte)codefile::OpCode::FCmp;
-        Self.LI(Fn, L, R);
+        Self.BIL(Fn, L, R);
     }
 
-    constexpr void Jmp(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::OpCode JmpType, Uint32 Address) {
+    constexpr void Jmp(this Assembler& /*Self*/, Function& Fn, codefile::OpCode JmpType, codefile::AddressType Address) {
         Fn.Code << (Byte)JmpType;
         Fn.Code << Address;
     }
 
-    constexpr void Call(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::FunctionType Index) {
+    constexpr void Jmp8(this Assembler& /*Self*/, Function& Fn, codefile::OpCode JmpType, Byte Address) {
+        Fn.Code << (Byte)JmpType;
+        Fn.Code << Address;
+    }
+
+    constexpr void Call(this Assembler& /*Self*/, Function& Fn, codefile::FunctionType Index) {
         Fn.Code << (Byte)codefile::OpCode::Call;
         Fn.Code << Index;
     }
 
-    constexpr void Ret(this JKRAssembler& /*Self*/, JKFunction& Fn) {
-        Fn.Code << (Byte)codefile::OpCode::Ret;
+    constexpr void Call8(this Assembler& /*Self*/, Function& Fn, Byte Index) {
+        Fn.Code << (Byte)codefile::OpCode::Call8;
+        Fn.Code << Index;
     }
 
-    constexpr void RRet(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest) {
-        Fn.Code << (Byte)codefile::OpCode::RRet;
+    constexpr void RetVoid(this Assembler& /*Self*/, Function& Fn) {
+        Fn.Code << (Byte)codefile::OpCode::RetVoid;
+    }
+
+    constexpr void Ret(this Assembler& /*Self*/, Function& Fn, Byte Dest) {
+        Fn.Code << (Byte)codefile::OpCode::Ret;
         Fn.Code << Dest;
     }
 
-    constexpr void LRet(this JKRAssembler& Self, JKFunction& Fn, codefile::LocalType Idx) {
-        Fn.Code << (Byte)codefile::OpCode::LRet;
-        Self.LIL(Fn, Idx, 0);
+    constexpr void Ret8(this Assembler& /*Self*/, Function& Fn, Byte Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Ret8;
+        Fn.Code << Constant;
     }
 
-    constexpr void GRet(this JKRAssembler& Self, JKFunction& Fn, codefile::GlobalType Idx) {
-        Fn.Code << (Byte)codefile::OpCode::GRet;
-        Self.GIL(Fn, Idx, 0);
+    constexpr void Ret16(this Assembler& /*Self*/, Function& Fn, Uint16 Constant) {
+        Fn.Code << (Byte)codefile::OpCode::Ret16;
+        Fn.Code << Constant;
     }
 
-    constexpr void RPush(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Reg) {
+    constexpr void RetLocal(this Assembler& /*Self*/, Function& Fn, codefile::LocalType Index) {
+        Fn.Code << (Byte)codefile::OpCode::RetLocal;
+        Fn.Code << Index;
+    }
+
+    constexpr void RetGlobal(this Assembler& /*Self*/, Function& Fn, codefile::GlobalType Index) {
+        Fn.Code << (Byte)codefile::OpCode::RetGlobal;
+        Fn.Code << Index;
+    }
+
+    constexpr void Push(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::RPush;
+        Fn.Code << (Byte)codefile::OpCodeStack::Push;
         Fn.Code << Reg;
     }
 
-    constexpr void LPush(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::LocalType Idx) {
+    constexpr void LocalPush(this Assembler& /*Self*/, Function& Fn, codefile::LocalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::LPush;
+        Fn.Code << (Byte)codefile::OpCodeStack::LocalPush;
         Fn.Code << Idx;
     }
 
-    constexpr void GPush(this JKRAssembler& /*Self*/, JKFunction& Fn, codefile::GlobalType Idx) {
+    constexpr void GlobalPush(this Assembler& /*Self*/, Function& Fn, codefile::GlobalType Idx) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::GPush;
+        Fn.Code << (Byte)codefile::OpCodeStack::GlobalPush;
         Fn.Code << Idx;
     }
 
-    constexpr void Push8(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte C) {
+    constexpr void Push8(this Assembler& /*Self*/, Function& Fn, Byte C) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
         Fn.Code << (Byte)codefile::OpCodeStack::Push8;
         Fn.Code << C;
     }
 
-    constexpr void Push16(this JKRAssembler& /*Self*/, JKFunction& Fn, Uint16 C) {
+    constexpr void Push16(this Assembler& /*Self*/, Function& Fn, Uint16 C) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
         Fn.Code << (Byte)codefile::OpCodeStack::Push16;
         Fn.Code << C;
     }
 
-    constexpr void Push32(this JKRAssembler& /*Self*/, JKFunction& Fn, Uint32 C) {
+    constexpr void Push32(this Assembler& /*Self*/, Function& Fn, Uint32 C) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
         Fn.Code << (Byte)codefile::OpCodeStack::Push32;
         Fn.Code << C;
     }
 
-    constexpr void Push64(this JKRAssembler& /*Self*/, JKFunction& Fn, Uint64 C) {
+    constexpr void Push64(this Assembler& /*Self*/, Function& Fn, Uint64 C) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
         Fn.Code << (Byte)codefile::OpCodeStack::Push64;
         Fn.Code << C;
     }
 
-    constexpr void PopTop(this JKRAssembler& /*Self*/, JKFunction& Fn) {
+    constexpr void PopTop(this Assembler& /*Self*/, Function& Fn) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
         Fn.Code << (Byte)codefile::OpCodeStack::PopTop;
     }
 
-    constexpr void RPop(this JKRAssembler& /*Self*/, JKFunction& Fn, Byte Dest) {
+    constexpr void Pop(this Assembler& /*Self*/, Function& Fn, Byte Dest) {
         Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::RPop;
+        Fn.Code << (Byte)codefile::OpCodeStack::Pop;
         Fn.Code << Dest;
     }
 

@@ -63,76 +63,136 @@ loop:
 
     Self.Write(Cast<const Byte*>(Format + start), (i - start));
 
-    Char ft = 0;
     if (Format[i] == '{') {
         i++;
-        ft = Format[i++];
+        Char ft = Format[i++];
+        start = i;
+
+        if (ft == '\'') {
+            Self.WriteArray({ '{' });
+        }
+        else if (ft == 's') {
+            const Char* str = va_arg(Args, const Char*);
+            Self.Write(Cast<const Byte*>(str), Strlen(str));
+        }
+        else if (ft == 'c') {
+            Char c = va_arg(Args, Char);
+            Self.WriteArray({ c });
+        }
+        else if (ft == 'b') {
+            Byte c = va_arg(Args, Byte);
+
+            Char buff[21] = {};
+            Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
+            Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
+        }
+        else if (ft == 'w') {
+            Uint16 c = va_arg(Args, Uint16);
+
+            Char buff[21] = {};
+            Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
+            Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
+        }
+        else if (ft == 'd') {
+            Uint32 c = va_arg(Args, Uint32);
+
+            Char buff[21] = {};
+            Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
+            Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
+        }
+        else if (ft == 'q' || ft == 'u') {
+            UInt c = va_arg(Args, UInt);
+
+            Char buff[21] = {};
+            Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
+            Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
+        }
+        else if (ft == 'x' || ft == 'X') {
+            Str digits = STR("0123456789ABCDEF");
+            Char buff[21] = {};
+            UInt hexLen = 0;
+            UInt val;
+            UInt hexIndex = 0;
+            
+            if (ft == 'X') {
+                hexLen = 8 << 1;
+                val = va_arg(Args, UInt);
+            }
+            else if (Format[i] == 'w') {
+                i++;
+                hexLen = 2 << 1;
+                val = (UInt)va_arg(Args, Uint16);
+            }
+            else if (Format[i] == 'b') {
+                i++;
+                hexLen = 1 << 1;
+                val = (UInt)va_arg(Args, Byte);
+            }
+            else {
+                hexLen = 4 << 1;
+                val = (UInt)va_arg(Args, Uint32);
+            }
+
+            bool enableZeroDeleter = true;
+            if (Format[i] == ':') {
+                i++;
+                if (Format[i] == '0') {
+                    i++;
+                    enableZeroDeleter = false;
+                }
+            }
+
+            hexIndex = (hexLen - 1) * 4;
+            bool foundFirst = false;
+            UInt firstIndex = 0;
+            UInt index = 0;
+            while (index < hexLen) {
+                Char character = digits[(val >> hexIndex) & 0x0f];
+                if (enableZeroDeleter && character != '0' && !foundFirst) {
+                    firstIndex = index;
+                    foundFirst = true;
+                }
+
+                buff[index] = character;
+                ++index;
+                hexIndex -= 4;
+            }
+
+            if (firstIndex)
+                Self.Write(Cast<Byte*>(buff), Strlen(Cast<Char*>(buff)));
+            else if (!enableZeroDeleter) {
+                Self.Write(Cast<Byte*>(buff), Strlen(Cast<Char*>(buff)));
+            }
+            else
+                Self.WriteArray({ '0' });
+        }
+        else if (ft == 'i' || ft == 's') {
+            Int c = va_arg(Args, Int);
+
+            Char buff[21] = {};
+            Char* rNext = buff + 21;
+            const UInt uVal = UInt(c);
+            if (c < 0) {
+                rNext = UnsignedToBuff(rNext, 0 - uVal);
+                *--rNext = '-';
+            }
+            else {
+                rNext = UnsignedToBuff(rNext, uVal);
+            }
+
+            Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
+        }
+        else if (ft == 'f') {
+            Float real = va_arg(Args, Float);
+            Char buff[21] = {};
+            sprintf_s(Cast<char*>(buff), 21, "%f", real);
+            Self.Write(Cast<const Byte*>(buff), Strlen(buff));
+        }
+
         RuntimeError(Format[i++] == '}', STR("Bad format string"));
         start = i;
     }
-    else
-        goto end;
 
-    if (ft == 's') {
-        const Char* str = va_arg(Args, const Char*);
-        Self.Write(Cast<const Byte*>(str), Strlen(str));
-    }
-    else if (ft == 'c') {
-        Char c = va_arg(Args, Char);
-        Self.WriteArray({ c });
-    }
-    else if (ft == 'b') {
-        Byte c = va_arg(Args, Byte);
-
-        Char buff[21] = {};
-        Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
-        Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
-    }
-    else if (ft == 'w') {
-        Uint16 c = va_arg(Args, Uint16);
-
-        Char buff[21] = {};
-        Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
-        Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
-    }
-    else if (ft == 'd') {
-        Uint32 c = va_arg(Args, Uint32);
-
-        Char buff[21] = {};
-        Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
-        Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
-    }
-    else if (ft == 'q' || ft == 'u') {
-        UInt c = va_arg(Args, UInt);
-
-        Char buff[21] = {};
-        Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
-        Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
-    }
-    else if (ft == 'i' || 's') {
-        Int c = va_arg(Args, Int);
-
-        Char buff[21] = {};
-        Char* rNext = buff + 21;
-        const UInt uVal = UInt(c);
-        if (c < 0) {
-            rNext = UnsignedToBuff(rNext, 0 - uVal);
-            *--rNext = '-';
-        }
-        else {
-            rNext = UnsignedToBuff(rNext, uVal);
-        }
-
-        Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
-    }
-    else if (ft == 'f') {
-        Float real = va_arg(Args, Float);
-        Char buff[21] = {};
-        sprintf_s(Cast<char*>(buff), 21, "%f", real);
-        Self.Write(Cast<const Byte*>(buff), Strlen(buff));
-    }
-
-end:
     if (Format[i] == 0)
         return;
     goto loop;

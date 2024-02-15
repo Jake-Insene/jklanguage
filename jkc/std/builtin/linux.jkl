@@ -1,4 +1,5 @@
 
-const Windows: byte = 0;
-const Linux: byte = 1;
-const Unix: byte = 1;
+const Windows: bool = 0;
+const Linux: bool = 1;
+const Unix: bool = 1;
+

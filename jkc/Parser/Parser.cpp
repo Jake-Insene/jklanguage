@@ -64,6 +64,17 @@ static constexpr ParseRule Rules[] = {
 // Utility
 //////////////////////////////////////////////////////////////////////////////////////////
 
+void Parser::ErrorAtCurrent(Str Format, ...) {
+    ErrorStream.Print(STR("{s}:{u}: Error: "), Current.Location.FileName, Current.Location.Line);
+    va_list args;
+    va_start(args, Format);
+    ErrorStream.PrintlnVa(Format, args);
+    va_end(args);
+
+    IsPanicMode = true;
+    MustSyncronize = true;
+}
+
 AST::TypeDecl Parser::ParseType() {
     AST::TypeDecl type{};
     type.Primitive = AST::TypeDecl::Type::Unknown;
@@ -144,7 +155,10 @@ AST::TypeDecl Parser::ParseType() {
 //////////////////////////////////////////////////////////////////////////////////////////
 
 mem::Ptr<AST::Expresion> Parser::ParseConstantValue(bool, mem::Ptr<AST::Expresion> /*RHS*/) {
-    auto constVal = mem::New<AST::Constant>(AST::ExpresionType::Constant, Last.Location.FileName, Last.Location.Line);
+    auto constVal = mem::New<AST::Constant>(
+        AST::ExpresionType::Constant, 
+        SourceLocation(Last.Location.FileName, Last.Location.Line)
+    );
 
     if (Last.Type == TokenType::ConstInteger) {
         constVal->ValueType.Primitive = AST::TypeDecl::Type::Int;
@@ -177,13 +191,19 @@ mem::Ptr<AST::Expresion> Parser::ParseConstantValue(bool, mem::Ptr<AST::Expresio
 }
 
 mem::Ptr<AST::Expresion> Parser::ParseIdentifier(bool /*CanAssign*/, mem::Ptr<AST::Expresion>) {
-    auto id = mem::New<AST::Identifier>(AST::ExpresionType::Identifier, Last.Location.FileName, Last.Location.Line);
+    auto id = mem::New<AST::Identifier>(
+        AST::ExpresionType::Identifier,
+        SourceLocation(Last.Location.FileName, Last.Location.Line)
+    );
     id->ID = std::move(Last.Value.Str);
     return mem::Ptr<AST::Expresion>::FromPtr(id);
 }
 
 mem::Ptr<AST::Expresion> Parser::ParseGroup(bool, mem::Ptr<AST::Expresion>) {
-    auto group = mem::New<AST::Group>(AST::ExpresionType::Group, Last.Location.FileName, Last.Location.Line);
+    auto group = mem::New<AST::Group>(
+        AST::ExpresionType::Group,
+        SourceLocation(Last.Location.FileName, Last.Location.Line)
+    );
 
     group->Value = ParseExpresion(ParsePrecedence::Assignment);
     Expected(TokenType::RightParent, STR("')' was expected"));
@@ -191,7 +211,10 @@ mem::Ptr<AST::Expresion> Parser::ParseGroup(bool, mem::Ptr<AST::Expresion>) {
 }
 
 mem::Ptr<AST::Expresion> Parser::ParseCall(bool, mem::Ptr<AST::Expresion> Expresion) {
-    auto call = mem::New<AST::Call>(AST::ExpresionType::Call, Current.Location.FileName, Current.Location.Line);
+    auto call = mem::New<AST::Call>(
+        AST::ExpresionType::Call,
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
+    );
 
     call->Target = std::move(Expresion);
 
@@ -210,13 +233,19 @@ mem::Ptr<AST::Expresion> Parser::ParseCall(bool, mem::Ptr<AST::Expresion> Expres
 }
 
 mem::Ptr<AST::Expresion> Parser::ParseDot(bool, mem::Ptr<AST::Expresion>) {
-    auto dot = mem::New<AST::Dot>(AST::ExpresionType::Dot, Current.Location.FileName, Current.Location.Line);
+    auto dot = mem::New<AST::Dot>(
+        AST::ExpresionType::Dot,
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
+    );
     Advance();
     return mem::Ptr<AST::Expresion>::FromPtr(dot);
 }
 
 mem::Ptr<AST::Expresion> Parser::ParseUnary(bool, mem::Ptr<AST::Expresion>) {
-    auto unary = mem::New<AST::Unary>(AST::ExpresionType::Unary, Last.Location.FileName, Last.Location.Line);
+    auto unary = mem::New<AST::Unary>(
+        AST::ExpresionType::Unary,
+        SourceLocation(Last.Location.FileName, Last.Location.Line)
+    );
 
     switch (Last.Type) {
     case TokenType::Minus: unary->Op = AST::UnaryOperation::Negate; break;
@@ -229,7 +258,10 @@ mem::Ptr<AST::Expresion> Parser::ParseUnary(bool, mem::Ptr<AST::Expresion>) {
 }
 
 mem::Ptr<AST::Expresion> Parser::ParseBinaryOp(bool, mem::Ptr<AST::Expresion> Expresion) {
-    auto binOp = mem::New<AST::BinaryOp>(AST::ExpresionType::BinaryOp, Last.Location.FileName, Last.Location.Line);
+    auto binOp = mem::New<AST::BinaryOp>(
+        AST::ExpresionType::BinaryOp,
+        SourceLocation(Last.Location.FileName, Last.Location.Line)
+    );
 
     binOp->Left = std::move(Expresion);
 
@@ -262,7 +294,10 @@ mem::Ptr<AST::Expresion> Parser::ParseBinaryOp(bool, mem::Ptr<AST::Expresion> Ex
 }
 
 mem::Ptr<AST::Expresion> Parser::ParseArrayList(bool, mem::Ptr<AST::Expresion>) {
-    auto arrayList = mem::New<AST::ArrayList>(AST::ExpresionType::ArrayList, Last.Location.FileName, Last.Location.Line);
+    auto arrayList = mem::New<AST::ArrayList>(
+        AST::ExpresionType::ArrayList,
+        SourceLocation(Last.Location.FileName, Last.Location.Line)
+    );
     
     while (Current.Type != TokenType::RightBrace && Current.Type != TokenType::EndOfFile) {
         arrayList->Elements.Push(nullptr) = std::move(ParseExpresion(ParsePrecedence::Assignment));
@@ -305,7 +340,10 @@ mem::Ptr<AST::Expresion> Parser::ParseExpresion(ParsePrecedence Precedence) {
 }
 
 mem::Ptr<AST::Block> Parser::ParseBlock() {
-    auto block = mem::New<AST::Block>(AST::ExpresionType::Block, Current.Location.FileName, Current.Location.Line);
+    auto block = mem::New<AST::Block>(
+        AST::ExpresionType::Block,
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
+    );
 
     while (Current.Type != TokenType::RightBrace && Current.Type != TokenType::EndOfFile) {
         mem::Ptr<AST::Statement> statement = block->Statements.Push(nullptr) = ParseStatement();
@@ -351,7 +389,10 @@ void Parser::ParseFunctionParameters(mem::Ptr<AST::Function>& Function) {
 }
 
 mem::Ptr<AST::Statement> Parser::ParseFunction() {
-    auto function = mem::New<AST::Function>(AST::StatementType::Function, Current.Location.FileName, Current.Location.Line);
+    auto function = mem::New<AST::Function>(
+        AST::StatementType::Function, 
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
+    );
     Advance(); // fn
 
     Expected(TokenType::Identifier, STR("A identifier was expected"));
@@ -379,7 +420,7 @@ mem::Ptr<AST::Statement> Parser::ParseFunction() {
             goto return_fn;
         }
 
-        if (!Expected(TokenType::LeftBrace, STR("'{' or ';' was expected"))) {
+        if (!Expected(TokenType::LeftBrace, STR("'{'}' or ';' was expected"))) {
             Advance();
             goto return_fn;
         }
@@ -392,7 +433,8 @@ mem::Ptr<AST::Statement> Parser::ParseFunction() {
             if (function->FunctionType.IsVoid()) {
                 function->Body->Statements.Push(nullptr) = mem::Ptr<AST::Statement>::FromPtr(
                     mem::New<AST::Return>(
-                        AST::StatementType::Return, Last.Location.FileName, Last.Location.Line
+                        AST::StatementType::Return, 
+                        SourceLocation(Last.Location.FileName, Last.Location.Line)
                     )
                 );
             }
@@ -410,7 +452,10 @@ return_fn:
 }
 
 mem::Ptr<AST::Statement> Parser::ParseReturn() {
-    auto ret = mem::New<AST::Return>(AST::StatementType::Return, Current.Location.FileName, Current.Location.Line);
+    auto ret = mem::New<AST::Return>(
+        AST::StatementType::Return,
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
+    );
     Advance();
 
     if (Current.Type == TokenType::Semicolon) {
@@ -424,7 +469,10 @@ mem::Ptr<AST::Statement> Parser::ParseReturn() {
 }
 
 mem::Ptr<AST::Statement> Parser::ParseConstVal() {
-    auto constVal = mem::New<AST::ConstVal>(AST::StatementType::ConstVal, Current.Location.FileName, Current.Location.Line);
+    auto constVal = mem::New<AST::ConstVal>(
+        AST::StatementType::ConstVal, 
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
+    );
     Advance(); // const
 
     Expected(TokenType::Identifier, STR("A identifier was expected"));
@@ -445,7 +493,10 @@ mem::Ptr<AST::Statement> Parser::ParseConstVal() {
 }
 
 mem::Ptr<AST::Statement> Parser::ParseVar() {
-    auto var = mem::New<AST::Var>(AST::StatementType::Var, Current.Location.FileName, Current.Location.Line);
+    auto var = mem::New<AST::Var>(
+        AST::StatementType::Var,
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
+    );
     Advance();
 
     Expected(TokenType::Identifier, STR("A identifier was expected"));
@@ -471,7 +522,10 @@ mem::Ptr<AST::Statement> Parser::ParseVar() {
 }
 
 mem::Ptr<AST::Statement> Parser::ParseIf() {
-    auto _if = mem::New<AST::If>(AST::StatementType::If, Current.Location.FileName, Current.Location.Line);
+    auto _if = mem::New<AST::If>(
+        AST::StatementType::If,
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
+    );
     Advance(); // if
 
     Expected(TokenType::LeftParent, STR("'(' was expected"));
@@ -497,7 +551,8 @@ mem::Ptr<AST::Statement> Parser::ParseIf() {
 
 mem::Ptr<AST::Statement> Parser::ParseExpresionStatement() {
     auto es = mem::New<AST::ExpresionStatement>(
-        AST::StatementType::ExpresionStatement, Current.Location.FileName, Current.Location.Line
+        AST::StatementType::ExpresionStatement, 
+        SourceLocation(Current.Location.FileName, Current.Location.Line)
     );
     es->Value = ParseExpresion(ParsePrecedence::Assignment);
     Expected(TokenType::Semicolon, STR("';' was expected"));
@@ -509,6 +564,8 @@ mem::Ptr<AST::Statement> Parser::ParseStatement() {
 
     if (MustSyncronize) {
         Syncronize();
+        if (Current.Type == TokenType::EndOfFile)
+            return statement;
     }
 
     if (Current.Type == TokenType::Fn) {
@@ -528,7 +585,8 @@ mem::Ptr<AST::Statement> Parser::ParseStatement() {
     }
     else if (Current.Type == TokenType::LeftBrace) {
         auto es = mem::New<AST::ExpresionStatement>(
-            AST::StatementType::ExpresionStatement, Current.Location.FileName, Current.Location.Line
+            AST::StatementType::ExpresionStatement, 
+            SourceLocation(Current.Location.FileName, Current.Location.Line)
         );
         Advance();
         es->Value = mem::Ptr<AST::Expresion>::FromPtr(ParseBlock());

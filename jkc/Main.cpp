@@ -28,11 +28,8 @@ static inline void PrintDuration() {
     io::Print(STR("{i}{s}"), duration, sufix);
 }
 
-static inline void BeginAction(Str FileName, ActionType Type, bool Error) {
+static inline void BeginAction(Str /*FileName*/, ActionType /*Type*/, bool /*Error*/) {
     start = std::chrono::high_resolution_clock::now();
-    if (Type == ActionType::Parsing && !Error) {
-        io::Println(FileName);
-    }
 }
 
 static inline void EndAction(Str /*FileName*/, ActionType Type, bool Error) {
@@ -68,7 +65,12 @@ int main() {
         io::File err = io::GetStderr();
         Compiler compiler = Compiler::New(err, pd);
 
-        if (!compiler.CompileFromSource(STR("Examples/main.jkl")).Success) {
+        CodeGen::EmitOptions options = {
+            .Debug = CodeGen::DBG_NORMAL,
+            .OptimizationLevel = CodeGen::OPTIMIZATION_NONE,
+        };
+
+        if (!compiler.CompileFromSource(STR("Examples/main.jkl"), options).Success) {
             io::Println(STR("Compilation fail"));
             error::Exit(UInt(-1));
         }

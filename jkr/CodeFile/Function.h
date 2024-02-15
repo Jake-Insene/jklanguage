@@ -11,11 +11,12 @@ enum FunctionAttributes {
 constexpr auto MaxArguments = 32;
 
 struct FunctionHeader {
-    Byte Attributes;
+    Uint16 Attributes;
     // Arguments are part of LocalCount but are used for diferent things
+    // If you use the reg callconv you
     Byte Arguments;
     Byte LocalCount;
-    unsigned int SizeOfCode;
+    Uint16 SizeOfCode;
 };
 
 }

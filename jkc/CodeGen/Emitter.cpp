@@ -4,85 +4,10 @@
 #include <jkr/CodeFile/Header.h>
 #include <jkr/CodeFile/Function.h>
 
-#define MATH_NOT_EQUAL(RESULT, LEFT, RIGHT, TYPE) {\
-    RESULT.Ty = TmpType::Register;\
-    Uint8 rightReg = 0;\
-    if(!RIGHT.IsRegister()) {\
-        rightReg = AllocateRegister();\
-        MoveTmp(Fn, rightReg, RIGHT);\
-    }\
-    else {\
-        rightReg = RIGHT.Reg;\
-    }\
-    if(LEFT.IsRegister()) {\
-        RESULT.Reg = LEFT.Reg;\
-        if (LEFT.Type.IsUInt()) {                              \
-            Assembler.##TYPE(Fn, LEFT.Reg, LEFT.Reg, rightReg);    \
-        }                                                       \
-        else if (LEFT.Type.IsInt()) {                          \
-            Assembler.I##TYPE(Fn, LEFT.Reg, LEFT.Reg, rightReg);   \
-        }                                                       \
-        else if (LEFT.Type.IsFloat()) {                        \
-            Assembler.F##TYPE(Fn, LEFT.Reg, LEFT.Reg, rightReg);   \
-        }\
-    }\
-    if(LEFT.IsLocal()) {\
-        Uint8 res = AllocateRegister();\
-        RESULT.Reg = res;\
-        MoveTmp(Fn, res, LEFT);\
-        if (LEFT.Type.IsUInt()) {                              \
-            Assembler.##TYPE(Fn, res, res, rightReg);    \
-        }                                                       \
-        else if (LEFT.Type.IsInt()) {                          \
-            Assembler.I##TYPE(Fn, res, res, rightReg);   \
-        }                                                       \
-        else if (LEFT.Type.IsFloat()) {                        \
-            Assembler.F##TYPE(Fn, res, res, rightReg);   \
-        }\
-    }\
-    DeallocateRegister(rightReg);\
-}
-
-#define MATH_EQUAL(LEFT, RIGHT, TYPE) {\
-    Uint8 rightReg = 0;\
-    if(!RIGHT.IsRegister()) {\
-        rightReg = AllocateRegister();\
-        MoveTmp(Fn, rightReg, RIGHT);\
-    }\
-    else {\
-        rightReg = RIGHT.Reg;\
-    }\
-    if(LEFT.IsRegister()) {\
-        if (LEFT.Type.IsUInt()) {                              \
-            Assembler.##TYPE(Fn, LEFT.Reg, LEFT.Reg, rightReg);    \
-        }                                                       \
-        else if (LEFT.Type.IsInt()) {                          \
-            Assembler.I##TYPE(Fn, LEFT.Reg, LEFT.Reg, rightReg);   \
-        }                                                       \
-        else if (LEFT.Type.IsFloat()) {                        \
-            Assembler.F##TYPE(Fn, LEFT.Reg, LEFT.Reg, rightReg);   \
-        }\
-    }\
-    if(LEFT.IsLocal()) {\
-        Uint8 tmp = AllocateRegister();\
-        MoveTmp(Fn, tmp, LEFT);        \
-        if (LEFT.Type.IsUInt()) {                              \
-            Assembler.##TYPE(Fn, tmp, tmp, rightReg);    \
-        }                                                       \
-        else if (LEFT.Type.IsInt()) {                          \
-            Assembler.I##TYPE(Fn, tmp, tmp, rightReg);   \
-        }                                                       \
-        else if (LEFT.Type.IsFloat()) {                        \
-            Assembler.F##TYPE(Fn, tmp, tmp, rightReg);   \
-        }\
-        DeallocateRegister(tmp);       \
-    }\
-    DeallocateRegister(rightReg);\
-}
-
 namespace CodeGen {
 
-void Emitter::Emit(AST::Program& Program, FileType FileTy, StreamOutput& Output) {
+void Emitter::Emit(AST::Program& Program, FileType FileTy, EmitOptions Options, StreamOutput& Output) {
+    CurrentOptions = Options;
     Functions.Clear();
     Globals.Clear();
 
@@ -126,9 +51,9 @@ void Emitter::Emit(AST::Program& Program, FileType FileTy, StreamOutput& Output)
     for (auto& fn : Functions.Data) {
         codefile::FunctionHeader fnHeader = {
             .Attributes = 0,
-            .Arguments = fn.CountOfArguments,
-            .LocalCount = (codefile::LocalType)fn.Locals.Size(),
-            .SizeOfCode = (Uint32)fn.Code.Buff.Size,
+            .Arguments = fn.StackArguments,
+            .LocalCount = fn.CountOfStackLocals,
+            .SizeOfCode = (Uint16)fn.Code.Buff.Size,
         };
 
         Output.Write((Byte*)&fnHeader, sizeof(codefile::FunctionHeader));
@@ -141,8 +66,17 @@ void Emitter::Emit(AST::Program& Program, FileType FileTy, StreamOutput& Output)
     }
 }
 
-void Emitter::Error(Str FileName, USize Line, Str Format, ...) {
-    ErrorStream.Print(STR("{s}:{u}:\n\tError: "), FileName, Line);
+void Emitter::Warn(const SourceLocation& Location, Str Format, ...) {
+    ErrorStream.Print(STR("{s}:{u}: Warn: "), Location.FileName, Location.Line);
+
+    va_list args;
+    va_start(args, Format);
+    ErrorStream.PrintlnVa(Format, args);
+    va_end(args);
+}
+
+void Emitter::Error(const SourceLocation& Location, Str Format, ...) {
+    ErrorStream.Print(STR("{s}:{u}: Error: "), Location.FileName, Location.Line);
     va_list args;
     va_start(args, Format);
     ErrorStream.PrintlnVa(Format, args);
@@ -150,19 +84,15 @@ void Emitter::Error(Str FileName, USize Line, Str Format, ...) {
     Success = false;
 }
 
-void Emitter::TypeError(const AST::TypeDecl& LHS, const AST::TypeDecl& RHS, Str FileName, USize Line) {
-    if (LHS.IsNumeric() && RHS.IsNumeric()) {
-        if ((LHS.IsFloat() && !RHS.IsFloat())
-            || (RHS.IsFloat() && !LHS.IsFloat())) {
-            Error(FileName, Line, STR("Possible data loss during conversion"));
-        }
-    }
-    else {
-        Error(FileName, Line,
-            STR("Invalid conversion from '{s}' to '{s}'"),
-            LHS.ToString().c_str(),
-            RHS.ToString().c_str()
-        );
+void Emitter::TypeError(const AST::TypeDecl& LHS, const AST::TypeDecl& RHS, 
+                        const SourceLocation& Location, Str Format, ...) {
+    if (LHS != RHS) {
+        ErrorStream.Print(STR("{s}:{u}: Error: "), Location.FileName, Location.Line);
+        va_list args;
+        va_start(args, Format);
+        ErrorStream.PrintlnVa(Format, args);
+        va_end(args);
+        Success = false;
     }
 }
 
@@ -192,16 +122,46 @@ void Emitter::PreDeclareFunction(AST::Function* Fn) {
     auto& fn = Functions.Emplace(Fn->Name);
     fn.Name = Fn->Name.data();
 
-    for (auto& param : Fn->Parameters) {
-        auto& local = fn.Locals.Emplace(param.Name);
-        local.Name = param.Name.c_str();
-        local.Type = param.Type;
-        local.Index = (codefile::LocalType)fn.Locals.Size() - 1;
+    if (CurrentOptions.OptimizationLevel == OPTIMIZATION_NONE) {
+        for (auto& param : Fn->Parameters) {
+            auto& local = fn.Locals.Emplace(param.Name);
+            local.Name = param.Name.c_str();
+            local.Type = param.Type;
+            local.IsInitialized = true;
+            local.Index = (codefile::LocalType)fn.Locals.Size() - 1;
+            fn.StackArguments++;
+        }
+    }
+    else {
+        if (Fn->Parameters.Size == 0)
+            fn.CC = CallConv::Stack;
+        else if(Fn->Parameters.Size <= 10)
+            fn.CC = CallConv::Register;
+        else
+            fn.CC = CallConv::RegS;
+
+        for (Byte i = 0; i < Fn->Parameters.Size; i++) {
+            auto& local = fn.Locals.Emplace(Fn->Parameters[i].Name);
+            local.Name = Fn->Parameters[i].Name.c_str();
+            local.Type = Fn->Parameters[i].Type;
+            local.IsInitialized = true;
+
+            if (i >= 10) {
+                fn.StackArguments = Byte(Fn->Parameters.Size - 10);
+                local.Index = fn.CountOfStackLocals++;
+            }
+            else {
+                local.IsRegister = true;
+                local.Reg = i+1;
+                fn.RegisterArguments++;
+            }
+        }
     }
 
+    fn.CountOfArguments = Byte(Fn->Parameters.Size);
     fn.Index = (Uint32)Functions.Size() - 1;
-    fn.CountOfArguments = (Uint8)Fn->Parameters.Size;
     fn.Type = Fn->FunctionType;
+    fn.IsDefined = Fn->IsDefined;
 }
 
 void Emitter::PreDeclareVar(AST::Var* Var) {
@@ -220,13 +180,23 @@ void Emitter::EmitFunction(AST::Function* ASTFn) {
     auto& fn = Functions.Get(Functions.Find(ASTFn->Name)->second);
 
     if (ASTFn->IsDefined) {
+        if (fn.RegisterArguments) {
+            for (Int16 i = 1; i <= fn.RegisterArguments; i++)
+                Registers[i].IsAllocated = true;
+        }
+
         for (auto& stat : ASTFn->Body->Statements) {
             EmitFunctionStatement(stat, fn);
+        }
+
+        if (fn.RegisterArguments) {
+            for (Int16 i = 1; i <= fn.RegisterArguments; i++)
+                Registers[i].IsAllocated = false;
         }
     }
 }
 
-void Emitter::EmitFunctionStatement(mem::Ptr<AST::Statement>& Stat, JKFunction& Fn) {
+void Emitter::EmitFunctionStatement(mem::Ptr<AST::Statement>& Stat, Function& Fn) {
     if (Stat->Type == AST::StatementType::Return) {
         EmitFunctionReturn((AST::Return*)Stat.Data, Fn);
     }
@@ -239,80 +209,203 @@ void Emitter::EmitFunctionStatement(mem::Ptr<AST::Statement>& Stat, JKFunction& 
     else if (Stat->Type == AST::StatementType::If) {
         EmitFunctionIf((AST::If*)Stat.Data, Fn);
     }
+    else if (Stat->Type == AST::StatementType::ExpresionStatement) {
+        (void)EmitFunctionExpresion(((AST::ExpresionStatement*)Stat.Data)->Value, Fn);
+    }
 }
 
-void Emitter::EmitFunctionReturn(AST::Return* Ret, JKFunction& Fn) {
+void Emitter::EmitFunctionReturn(AST::Return* Ret, Function& Fn) {
     if (Ret->Value) {
         TmpValue tmp = EmitFunctionExpresion(Ret->Value, Fn);
         if (tmp.IsErr()) return;
-        TypeError(Fn.Type, tmp.Type, Ret->FileName, Ret->Line);
+        TypeError(
+            Fn.Type, tmp.Type, Ret->Location,
+            STR("Invalid conversion from {s} to {s}"),
+            tmp.Type.ToString().c_str(), Fn.Type.ToString().c_str()
+        );
 
         if (tmp.IsRegister()) {
-            Assembler.RRet(Fn, tmp.Reg);
-            DeallocateRegister(tmp.Reg);
+            if (Fn.CC == CallConv::RegS || Fn.CC == CallConv::Register) {
+                if (tmp.Reg != 0) {
+                    CodeAssembler.Mov(Fn, 0, tmp.Reg);
+                }
+                CodeAssembler.RetVoid(Fn);
+            }
+            else {
+                if(tmp.Reg == 0)
+                    CodeAssembler.RetVoid(Fn);
+                else
+                    CodeAssembler.Ret(Fn, tmp.Reg);
+                DeallocateRegister(tmp.Reg);
+            }
         }
-        else if(tmp.IsLocal()) {
-            Assembler.LRet(Fn, tmp.Local);
+        else if (tmp.IsLocal()) {
+            if (Fn.CC == CallConv::RegS || Fn.CC == CallConv::Register) {
+                CodeAssembler.LocalGet(Fn, 0, tmp.Local);
+                CodeAssembler.RetVoid(Fn);
+            }
+            else {
+                CodeAssembler.RetLocal(Fn, tmp.Local);
+            }
+        }
+        else if (tmp.IsLocalReg()) {
+            if (Fn.CC == CallConv::RegS || Fn.CC == CallConv::Register) {
+                if (tmp.Reg != 0) {
+                    CodeAssembler.Mov(Fn, 0, tmp.Reg);
+                    CodeAssembler.RetVoid(Fn);
+                }
+            }
+            else {
+                if (tmp.Reg == 0)
+                    CodeAssembler.RetVoid(Fn);
+                else
+                    CodeAssembler.Ret(Fn, tmp.Reg);
+                DeallocateRegister(tmp.Reg);
+            }
         }
         else if (tmp.IsGlobal()) {
-            Assembler.GRet(Fn, tmp.Global);
+            if (Fn.CC == CallConv::RegS || Fn.CC == CallConv::Register) {
+                CodeAssembler.GlobalGet(Fn, 0, tmp.Global);
+            }
+            else
+                CodeAssembler.RetGlobal(Fn, tmp.Global);
         }
         else if (tmp.IsConstant()) {
-            Uint8 reg = AllocateRegister();
-            MoveTmp(Fn, reg, tmp);
-            Assembler.RRet(Fn, reg);
-            DeallocateRegister(reg);
+            if (Fn.CC == CallConv::RegS || Fn.CC == CallConv::Register) {
+                MoveTmp(Fn, 0, tmp);
+                CodeAssembler.RetVoid(Fn);
+            }
+            else {
+                if (tmp.Type.SizeInBits > 16) {
+                    Uint8 reg = AllocateRegister();
+                    MoveTmp(Fn, reg, tmp);
+                    CodeAssembler.Ret(Fn, reg);
+                    DeallocateRegister(reg);
+                }
+                else {
+                    if (tmp.Type.SizeInBits <= 8) {
+                        CodeAssembler.Ret8(Fn, tmp.Reg);
+                    }
+                    else if (tmp.Type.SizeInBits <= 16) {
+                        CodeAssembler.Ret16(Fn, (Uint16)tmp.Data);
+                    }
+                }
+            }
         }
 
     }
     else {
-        Assembler.Ret(Fn);
-        TypeError(
-            AST::TypeDecl::Void(),
-            Fn.Type,
-            Ret->FileName,
-            Ret->Line
-        );
+        CodeAssembler.RetVoid(Fn);
     }
 }
 
-void Emitter::EmitFunctionLocal(AST::Var* Var, JKFunction& Fn) {
+void Emitter::EmitFunctionLocal(AST::Var* Var, Function& Fn) {
+    {
+        auto it = Fn.Locals.Find(Var->Name);
+        if (it != Fn.Locals.end()) {
+            Error(Var->Location, STR("{s} is already defined"), Var->Name.c_str());
+        }
+    }
+
+    {
+        auto it = Globals.Find(Var->Name);
+        if (it != Globals.end()) {
+            Warn(Var->Location, STR("{s} is shadowing a variable"), Var->Name.c_str());
+        }
+    }
+
+    auto& local = Fn.Locals.Emplace(Var->Name);
+    local.Type = Var->VarType;
+
+    if (!Var->Value) {
+        local.IsInitialized = false;
+    }
+    else {
+        local.IsInitialized = true;
+
+        TmpValue tmp = EmitFunctionExpresion(Var->Value, Fn);
+        TypeError(
+            Var->VarType, tmp.Type, Var->Location,
+            STR("You can't initialize a var of type {s} with a value of type {s}"),
+            Var->VarType.ToString().c_str(), tmp.Type.ToString().c_str()
+        );
+
+        if (tmp.IsRegister()) {
+            CodeAssembler.LocalSet(Fn, tmp.Reg, local.Index);
+            DeallocateRegister(tmp.Reg);
+        }
+        else {
+            Uint8 reg = AllocateRegister();
+            MoveTmp(Fn, reg, tmp);
+            CodeAssembler.LocalSet(Fn, reg, local.Index);
+            DeallocateRegister(reg);
+        }
+        local.Index = Fn.CountOfStackLocals++;
+    }
 }
 
-void Emitter::EmitFunctionConstVal(AST::ConstVal* ConstVal, JKFunction& Fn) {
+void Emitter::EmitFunctionConstVal(AST::ConstVal* ConstVal, Function& Fn) {
 }
 
-void Emitter::EmitFunctionIf(AST::If* _If, JKFunction& Fn) {
+void Emitter::EmitFunctionIf(AST::If* _If, Function& Fn) {
     TmpValue result = EmitFunctionExpresion(_If->Expr, Fn);
 
     switch (result.LastOp) {
     case AST::BinaryOperation::Comparision:
-        Assembler.Jmp(Fn, codefile::OpCode::Jne, 0);
+        CodeAssembler.Jmp(Fn, codefile::OpCode::Jne, 0);
         break;
     }
-    USize toResolve = Fn.Code.Buff.Size - 4;
+    USize toResolve = Fn.Code.Buff.Size - sizeof(codefile::AddressType);
 
     (void)EmitFunctionExpresion(_If->Body, Fn);
     if (_If->Elif) {
-        *((Uint32*)&Fn.Code.Buff[toResolve]) = (Uint32)Fn.Code.Buff.Size;
+        codefile::AddressType address = (codefile::AddressType)Fn.Code.Buff.Size;
+        if (address > ByteMax) {
+            *((codefile::AddressType*)&Fn.Code.Buff[toResolve]) = address;
+        }
+        else {
+            Fn.Code.Buff[toResolve - 1] = Byte(Fn.Code.Buff[toResolve - 1]) + 9;
+            Fn.Code.Buff[toResolve] = Byte(address);
+            mem::Copy(
+                (Fn.Code.Buff.Data + (toResolve + 1)),
+                (Fn.Code.Buff.Data + (toResolve + sizeof(codefile::AddressType))),
+                (Fn.Code.Buff.Size - 1) - (toResolve + 1)
+            );
+        }
         EmitFunctionIf((AST::If*)_If->Elif.Data, Fn);
     }
     else if (_If->ElseBlock) {
         (void)EmitFunctionExpresion(_If->ElseBlock, Fn);
     }
     else {
-        *((Uint32*)&Fn.Code.Buff[toResolve]) = (Uint32)Fn.Code.Buff.Size;
+        codefile::AddressType address = (codefile::AddressType)Fn.Code.Buff.Size;
+        if (address > ByteMax) {
+            *((codefile::AddressType*)&Fn.Code.Buff[toResolve]) = address;
+        }
+        else {
+            Fn.Code.Buff[toResolve - 1] = Byte(Fn.Code.Buff[toResolve - 1]) + 9;
+            Fn.Code.Buff[toResolve] = Byte(address-1);
+            mem::Copy(
+                (Fn.Code.Buff.Data + (toResolve + 1)),
+                (Fn.Code.Buff.Data + (toResolve + sizeof(codefile::AddressType))),
+                (Fn.Code.Buff.Size) - (toResolve+1)
+            );
+            Fn.Code.Buff.Size -= 1;
+        }
     }
 
 }
 
-TmpValue Emitter::GetID(const std::u8string& ID, JKFunction& Fn, Str FileName, USize Line) {
+TmpValue Emitter::GetID(const std::u8string& ID, Function& Fn, const SourceLocation& Location) {
     {
         auto it = Fn.Locals.Find(ID);
         if (it != Fn.Locals.end()) {
             auto& local = Fn.Locals.Get(it->second);
+            if (!local.IsInitialized) {
+                Error(Location, STR("Trying to use a uninitialized var"));
+            }
             return TmpValue{
-                .Ty = TmpType::Local,
+                .Ty = local.IsRegister ? TmpType::LocalReg : TmpType::Local,
                 .Data = local.Index,
                 .Type = local.Type,
             };
@@ -322,7 +415,7 @@ TmpValue Emitter::GetID(const std::u8string& ID, JKFunction& Fn, Str FileName, U
     {
         auto it = Globals.Find(ID);
         if (it == Globals.end()) {
-            Error(FileName, Line,
+            Error(Location,
                 STR("Undefined reference to '{s}'"),
                 ID.c_str()
             );
@@ -340,15 +433,15 @@ TmpValue Emitter::GetID(const std::u8string& ID, JKFunction& Fn, Str FileName, U
     return TmpValue();
 }
 
-JKFunction* Emitter::GetFn(mem::Ptr<AST::Expresion>& Target) {
+Function* Emitter::GetFn(mem::Ptr<AST::Expresion>& Target) {
     if (Target->Type == AST::ExpresionType::Identifier) {
         auto id = (AST::Identifier*)Target.Data;
         auto it = Functions.Find(id->ID);
-        if (it != Functions.end()) {
+        if (it != Functions.end() && Functions.Get(it->second).IsDefined) {
             return &Functions.Get(it->second);
         }
 
-        Error(id->FileName, id->Line,
+        Error(id->Location,
             STR("Undefined reference to function '{s}'"),
             id->ID.c_str()
         );
@@ -356,7 +449,7 @@ JKFunction* Emitter::GetFn(mem::Ptr<AST::Expresion>& Target) {
     return nullptr;
 }
 
-TmpValue Emitter::EmitFunctionExpresion(mem::Ptr<AST::Expresion>& Expr, JKFunction& Fn) {
+TmpValue Emitter::EmitFunctionExpresion(mem::Ptr<AST::Expresion>& Expr, Function& Fn) {
     if (Expr->Type == AST::ExpresionType::Constant) {
         return EmitFunctionConstant((AST::Constant*)Expr.Data, Fn);
     }
@@ -389,14 +482,17 @@ TmpValue Emitter::EmitFunctionExpresion(mem::Ptr<AST::Expresion>& Expr, JKFuncti
     return TmpValue();
 }
 
-TmpValue Emitter::EmitFunctionConstant(AST::Constant* Constant, JKFunction& Fn) {
+TmpValue Emitter::EmitFunctionConstant(AST::Constant* Constant, Function& Fn) {
     TmpValue tmp = {};
     tmp.Ty = TmpType::Constant;
     tmp.Type = Constant->ValueType;
     tmp.Data = Constant->Unsigned;
 
     if (Constant->ValueType.IsUInt() || Constant->ValueType.IsInt()) {
-        if (Constant->Unsigned <= UINT8_MAX) {
+        if (Constant->Unsigned <= Const4Max) {
+            tmp.Type.SizeInBits = 4;
+        }
+        else if (Constant->Unsigned <= UINT8_MAX) {
             tmp.Type.SizeInBits = 8;
         }
         else if (Constant->Unsigned <= UINT16_MAX) {
@@ -409,93 +505,109 @@ TmpValue Emitter::EmitFunctionConstant(AST::Constant* Constant, JKFunction& Fn) 
     return tmp;
 }
 
-TmpValue Emitter::EmitFunctionIdentifier(AST::Identifier* ID, JKFunction& Fn) {
-    return GetID(ID->ID, Fn, ID->FileName, ID->Line);
+TmpValue Emitter::EmitFunctionIdentifier(AST::Identifier* ID, Function& Fn) {
+    return GetID(ID->ID, Fn, ID->Location);
 }
 
-TmpValue Emitter::EmitFunctionCall(AST::Call* Call, JKFunction& Fn) {
+TmpValue Emitter::EmitFunctionCall(AST::Call* Call, Function& Fn) {
     TmpValue result = {};
-    JKFunction* target = GetFn(Call->Target);
+    Function* target = GetFn(Call->Target);
     if (target == nullptr) return result;
     
     List<Byte> usedRegisters;
     for (auto& reg : Registers) {
         if (reg.IsAllocated) {
             usedRegisters.Push(reg.Index);
-            Assembler.RPush(Fn, reg.Index);
+            CodeAssembler.Push(Fn, reg.Index);
             DeallocateRegister(reg.Index);
         }
     }
 
     if (target->CountOfArguments != Call->Arguments.Size) {
-        Error(Call->FileName, Call->Line,
+        Error(Call->Location,
             STR("{u} arguments was expected but {u} was founded"),
             (UInt)target->CountOfArguments,
             Call->Arguments.Size
         );
     }
 
-    result.Type = target->Type;
-    for (Int32 i = target->CountOfArguments - 1; i >= 0; i--) {
-        TmpValue arg = EmitFunctionExpresion(Call->Arguments[i], Fn);
-        auto& local = target->Locals.Get(i);
+    for (Int8 i = target->CountOfArguments; i > 0; i--) {
+        TmpValue arg = EmitFunctionExpresion(Call->Arguments[i-1], Fn);
+        if (target->CC == CallConv::Register || target->CC == CallConv::RegS) {
+            if (i <= target->RegisterArguments) {
+                if (arg.Ty == TmpType::Register) {
+                    if (arg.Reg != i) {
+                        CodeAssembler.Mov(Fn, Byte(i), arg.Reg);
+                    }
+                }
+                else {
+                    MoveTmp(Fn, Byte(i), arg);
+                }
+            }
+        }
+        else {
+            PushTmp(Fn, arg);
+        }
 
-        TypeError(local.Type, arg.Type, Call->FileName, Call->Line);
+        auto& local = target->Locals.Get(i-1);
+        TypeError(
+            local.Type, arg.Type, Call->Location, 
+            STR("Invalid argument at {d}: using a value of type {s} with a argument of type {s}"), 
+            i-1, arg.Type.ToString().c_str(), local.Type.ToString().c_str()
+        );
 
-        PushTmp(Fn, arg);
     }
 
-    Assembler.Call(Fn, target->Index);
+    if (target->Index <= ByteMax) {
+        CodeAssembler.Call8(Fn, (Byte)target->Index);
+    }
+    else {
+        CodeAssembler.Call(Fn, target->Index);
+    }
 
-    if(usedRegisters.Size)
-    {
+    if (usedRegisters.Size) {
         auto end = usedRegisters.end();
         while (--end != usedRegisters.begin() - 1) {
-            Assembler.RPop(Fn, *end);
+            CodeAssembler.Pop(Fn, *end);
             Registers[*end].IsAllocated = true;
         }
     }
 
     result.Ty = TmpType::Register;
-    result.Data = (Uint64)AllocateRegister();
-    Assembler.RMov(Fn, (Uint8)result.Data);
+    result.Type = target->Type;
+    if (target->CC == CallConv::Stack) {
+        result.Reg = AllocateRegister();
+        CodeAssembler.MovRes(Fn, result.Reg);
+    }
+    else {
+        Registers[0].IsAllocated = true;
+        result.Reg = 0;
+    }
 
     usedRegisters.Destroy();
     return result;
 }
 
-TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, JKFunction& Fn) {
+TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, Function& Fn) {
     TmpValue left = EmitFunctionExpresion(BinOp->Left, Fn);
     TmpValue right = EmitFunctionExpresion(BinOp->Right, Fn);
     TmpValue result = {};
-    result.Type = left.Type;
-
-    TypeError(left.Type, right.Type, BinOp->FileName, BinOp->Line);
+    TypeError(
+        left.Type, right.Type, BinOp->Location,
+        STR("Invalid operands type {s} and {s}"),
+        left.Type.ToString().c_str(), right.Type.ToString().c_str()
+    );
 
     switch (BinOp->Op) {
     case AST::BinaryOperation::Add:
-        MATH_NOT_EQUAL(result, left, right, Add);
-        break;
     case AST::BinaryOperation::AddEqual:
-        MATH_EQUAL(left, right, Add);
-        break;
     case AST::BinaryOperation::Sub:
-        MATH_NOT_EQUAL(result, left, right, Sub);
-        break;
     case AST::BinaryOperation::SubEqual:
-        MATH_EQUAL(left, right, Sub);
-        break;
     case AST::BinaryOperation::Mul:
-        MATH_NOT_EQUAL(result, left, right, Mul);
-        break;
     case AST::BinaryOperation::MulEqual:
-        MATH_EQUAL(left, right, Mul);
-        break;
     case AST::BinaryOperation::Div:
-        MATH_NOT_EQUAL(result, left, right, Div);
-        break;
     case AST::BinaryOperation::DivEqual:
-        MATH_EQUAL(left, right, Div);
+        result = EmitBinaryOp(left, right, BinOp->Op, Fn);
         break;
     case AST::BinaryOperation::Comparision:
     case AST::BinaryOperation::NotEqual:
@@ -515,13 +627,13 @@ TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, JKFunction& Fn) {
 
         if (left.IsRegister()) {
             if (left.Type.IsInt()) {
-                Assembler.ICmp(Fn, left.Reg, rightReg);
+                CodeAssembler.ICmp(Fn, left.Reg, rightReg);
             }
             else if (left.Type.IsUInt()) {
-                Assembler.Cmp(Fn, left.Reg, rightReg);
+                CodeAssembler.Cmp(Fn, left.Reg, rightReg);
             }
             else if (left.Type.IsFloat()) {
-                Assembler.FCmp(Fn, left.Reg, rightReg);
+                CodeAssembler.FCmp(Fn, left.Reg, rightReg);
             }
         }
         else if (left.IsLocal()) {
@@ -530,13 +642,24 @@ TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, JKFunction& Fn) {
             DeallocateRegister(tmp);
 
             if (left.Type.IsInt()) {
-                Assembler.ICmp(Fn, tmp, rightReg);
+                CodeAssembler.ICmp(Fn, tmp, rightReg);
             }
             else if (left.Type.IsUInt()) {
-                Assembler.Cmp(Fn, tmp, rightReg);
+                CodeAssembler.Cmp(Fn, tmp, rightReg);
             }
             else if (left.Type.IsFloat()) {
-                Assembler.FCmp(Fn, tmp, rightReg);
+                CodeAssembler.FCmp(Fn, tmp, rightReg);
+            }
+        }
+        else if (left.IsLocalReg()) {
+            if (left.Type.IsInt()) {
+                CodeAssembler.ICmp(Fn, left.Reg, rightReg);
+            }
+            else if (left.Type.IsUInt()) {
+                CodeAssembler.Cmp(Fn, left.Reg, rightReg);
+            }
+            else if (left.Type.IsFloat()) {
+                CodeAssembler.FCmp(Fn, left.Reg, rightReg);
             }
         }
 
@@ -550,23 +673,106 @@ TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, JKFunction& Fn) {
         break;
     }
 
+    result.Type = left.Type;
     result.LastOp = BinOp->Op;
     return result;
 }
 
-TmpValue Emitter::EmitFunctionUnary(AST::Unary* Unary, JKFunction& Fn) {
+#define MAKE_OP_CONST(Type, Function, ...) \
+    if(Type.IsInt()) {\
+        CodeAssembler.I##Function(Fn, __VA_ARGS__);\
+    }\
+    else if(Type.IsUInt()) {\
+        CodeAssembler.##Function(Fn, __VA_ARGS__);\
+    }\
+
+#define MAKE_OP(Type, Function, ...) \
+    if(Type.IsInt()) {\
+        CodeAssembler.I##Function(Fn, __VA_ARGS__);\
+    }\
+    else if(Type.IsUInt()) {\
+        CodeAssembler.##Function(Fn, __VA_ARGS__);\
+    }\
+    else if (Type.IsFloat()) {\
+        CodeAssembler.F##Function(Fn, __VA_ARGS__);\
+    }
+
+#define MAKE_CASE(Case) \
+    if(Op == AST::BinaryOperation::Case){\
+        if(Right.IsRegister()) {\
+            MAKE_OP(Right.Type, Case, reg, reg, Right.Reg);\
+            DeallocateRegister(Right.Reg);\
+        }\
+        else if (Right.IsConstant()) {\
+            if(Right.Data == 1 && \
+            (AST::BinaryOperation::Case == AST::BinaryOperation::Sub || \
+             AST::BinaryOperation::Case == AST::BinaryOperation::SubEqual)) {\
+                MAKE_OP(Right.Type, Dec, reg);\
+            }\
+            else if(Right.Data == 1 && \
+            (AST::BinaryOperation::Case == AST::BinaryOperation::Add || \
+             AST::BinaryOperation::Case == AST::BinaryOperation::AddEqual)) {\
+                MAKE_OP(Right.Type, Inc, reg);\
+            }\
+            else if (Right.Type.SizeInBits <= 8) {\
+                MAKE_OP_CONST(Right.Type, Case##8, reg, reg, Right.Reg);\
+            }\
+            else if (Right.Type.SizeInBits <= 16) {\
+                MAKE_OP_CONST(Right.Type, Case##16, reg, reg, (Uint16)Right.Data);\
+            }\
+        }\
+        else if (Right.IsLocal()) {\
+            Byte tmp = AllocateRegister();\
+            MoveTmp(Fn, tmp, Right);\
+            MAKE_OP(Right.Type, Case, reg, reg, tmp);\
+            DeallocateRegister(tmp);\
+        }\
+        else if (Right.IsLocalReg()) {\
+            MAKE_OP(Right.Type, Case, reg, reg, Right.Reg);\
+        }\
+    }
+
+TmpValue Emitter::EmitBinaryOp(TmpValue& Left, TmpValue& Right, AST::BinaryOperation Op, Function& Fn) {
+    TmpValue result = {};
+    UInt asInt = UInt(Op);
+
+    if (asInt >= 8 && asInt <= 11) {
+    }
+    else {
+        Uint8 reg = Byte(-1);
+        result.Ty = TmpType::Register;
+        if(!Left.IsLocalReg())
+        {
+            reg = AllocateRegister();
+            MoveTmp(Fn, reg, Left);
+            result.Reg = reg;
+        }
+        else {
+            result.Reg = reg = Left.Reg;
+        }
+
+        MAKE_CASE(Add);
+        MAKE_CASE(Sub);
+        MAKE_CASE(Mul);
+        MAKE_CASE(Div);
+    }
+
+    return result;
+}
+
+TmpValue Emitter::EmitFunctionUnary(AST::Unary* Unary, Function& Fn) {
     return TmpValue();
 }
 
-TmpValue Emitter::EmitFunctionDot(AST::Dot* Dot, JKFunction& Fn) {
+TmpValue Emitter::EmitFunctionDot(AST::Dot* Dot, Function& Fn) {
     return TmpValue();
 }
 
-TmpValue Emitter::EmitFunctionArrayList(AST::ArrayList* ArrayList, JKFunction& Fn) {
+TmpValue Emitter::EmitFunctionArrayList(AST::ArrayList* ArrayList, Function& Fn) {
     return TmpValue();
 }
 
-TmpValue Emitter::EmitFunctionBlock(AST::Block* Block, JKFunction& Fn) {
+TmpValue Emitter::EmitFunctionBlock(AST::Block* Block, Function& Fn) {
     for (auto& stat : Block->Statements) {
         EmitFunctionStatement(stat, Fn);
     }
@@ -574,45 +780,57 @@ TmpValue Emitter::EmitFunctionBlock(AST::Block* Block, JKFunction& Fn) {
     return TmpValue();
 }
 
-void Emitter::PushTmp(JKFunction& Fn, const TmpValue& Tmp) {
+void Emitter::PushTmp(Function& Fn, const TmpValue& Tmp) {
     if (Tmp.IsRegister()) {
-        Assembler.RPush(Fn, Tmp.Reg);
+        CodeAssembler.Push(Fn, Tmp.Reg);
         DeallocateRegister(Tmp.Reg);
     }
     else if (Tmp.IsLocal()) {
-        Assembler.LPush(Fn, Tmp.Local);
+        CodeAssembler.LocalPush(Fn, Tmp.Local);
+    }
+    else if (Tmp.IsLocalReg()) {
+        CodeAssembler.Push(Fn, Tmp.Reg);
     }
     else if (Tmp.IsConstant()) {
-        if (Tmp.Type.SizeInBits == 8)
-            Assembler.Push8(Fn, (Uint8)Tmp.Data);
+        if (Tmp.Type.SizeInBits <= 8)
+            CodeAssembler.Push8(Fn, (Uint8)Tmp.Data);
         else if (Tmp.Type.SizeInBits == 16)
-            Assembler.Push16(Fn, (Uint16)Tmp.Data);
+            CodeAssembler.Push16(Fn, (Uint16)Tmp.Data);
         else if (Tmp.Type.SizeInBits == 32)
-            Assembler.Push32(Fn, (Uint32)Tmp.Data);
+            CodeAssembler.Push32(Fn, (Uint32)Tmp.Data);
         else if (Tmp.Type.SizeInBits == 64)
-            Assembler.Push64(Fn, Tmp.Data);
+            CodeAssembler.Push64(Fn, Tmp.Data);
     }
 }
 
-void Emitter::MoveTmp(JKFunction& Fn, Uint8 Reg, const TmpValue& Tmp) {
+void Emitter::MoveTmp(Function& Fn, Uint8 Reg, const TmpValue& Tmp) {
     if (Tmp.IsRegister()) {
-        Assembler.Mov(Fn, Reg, Tmp.Reg);
+        CodeAssembler.Mov(Fn, Reg, Tmp.Reg);
     }
     else if (Tmp.IsLocal()) {
-        Assembler.LocalGet(Fn, Reg, Tmp.Local);
+        if (Tmp.Local <= 0xF) {
+            CodeAssembler.LocalGet4(Fn, Reg, Tmp.Reg);
+        }
+        else
+            CodeAssembler.LocalGet(Fn, Reg, Tmp.Local);
+    }
+    else if (Tmp.IsLocalReg()) {
+        CodeAssembler.Mov(Fn, Reg, Tmp.Reg);
     }
     else if (Tmp.IsGlobal()) {
-        Assembler.GlobalGet(Fn, Reg, (Uint32)Tmp.Data);
+        CodeAssembler.GlobalGet(Fn, Reg, (Uint32)Tmp.Data);
     }
     else if (Tmp.IsConstant()) {
-        if (Tmp.Type.SizeInBits == 8)
-            Assembler.Mov8(Fn, Reg, (Uint8)Tmp.Data);
+        if (Tmp.Type.SizeInBits == 4)
+            CodeAssembler.Const4(Fn, Reg, Tmp.Reg);
+        else if (Tmp.Type.SizeInBits == 8)
+            CodeAssembler.Const8(Fn, Reg, Tmp.Reg);
         else if (Tmp.Type.SizeInBits == 16)
-            Assembler.Mov16(Fn, Reg, (Uint16)Tmp.Data);
+            CodeAssembler.Const16(Fn, Reg, (Uint16)Tmp.Data);
         else if (Tmp.Type.SizeInBits == 32)
-            Assembler.Mov32(Fn, Reg, (Uint32)Tmp.Data);
+            CodeAssembler.Const32(Fn, Reg, (Uint32)Tmp.Data);
         else if (Tmp.Type.SizeInBits == 64)
-            Assembler.Mov64(Fn, Reg, Tmp.Data);
+            CodeAssembler.Const64(Fn, Reg, Tmp.Data);
     }
 }
 
