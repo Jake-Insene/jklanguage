@@ -5,6 +5,7 @@
 #include "jkc/CodeGen/Assembler.h"
 #include "jkc/Utility/Memory.h"
 #include "jkc/Utility/File.h"
+#include "stdjk/String.h"
 #include <unordered_map>
 #include <assert.h>
 
@@ -39,13 +40,9 @@ struct EmitOptions {
     Optimization OptimizationLevel;
 };
 
-struct Constant {
-    AST::TypeDecl Type = {};
-    union {
-        Int Signed = 0;
-        UInt Unsigned;
-        Float Real;
-    };
+struct RegisterInfo {
+    Byte Index = 0;
+    bool IsAllocated = false;
 };
 
 struct [[nodiscard]] TmpValue {
@@ -85,12 +82,15 @@ struct Emitter {
     void GlobalError(Str Format, ...);
     
     void PreDeclareStatement(mem::Ptr<AST::Statement>& Stat);
-    void PreDeclareFunction(AST::Function* Fn);
+    void PreDeclareFunction(AST::Function* ASTFn);
     void PreDeclareVar(AST::Var* Var);
     void PreDeclareConstVal(AST::ConstVal* ConstVal);
 
+    TmpValue EmitExpresion(mem::Ptr<AST::Expresion>& Expr);
     void EmitStatement(mem::Ptr<AST::Statement>& Stat);
     void EmitFunction(AST::Function* ASTFn);
+    void EmitVar(AST::Var* Var);
+    void EmitConstVal(AST::ConstVal* ConstVal);
     
     void EmitFunctionStatement(mem::Ptr<AST::Statement>& Stat, Function& Fn);
     void EmitFunctionReturn(AST::Return* Ret, Function& Fn);
@@ -115,9 +115,11 @@ struct Emitter {
     TmpValue EmitFunctionBlock(AST::Block* Block, Function& Fn);
 
     void PushTmp(Function& Fn, const TmpValue& Tmp);
-    void MoveTmp(Function& Fn, Uint8 Reg, const TmpValue& Tmp);
+    void MoveTmp(Function& Fn, UInt8 Reg, const TmpValue& Tmp);
+    Byte TypeToPrimitive(const AST::TypeDecl& Type);
+    Byte TypeToAttributes(const AST::TypeDecl& Type);
 
-    Uint8 AllocateRegister() {
+    UInt8 AllocateRegister() {
         for (auto& r : Registers) {
             if (!r.IsAllocated) {
                 r.IsAllocated = true;
@@ -125,10 +127,10 @@ struct Emitter {
             }
         }
         assert("Register allocation fail");
-        return Uint8(-1);
+        return UInt8(-1);
     }
 
-    void DeallocateRegister(Uint8 Index) {
+    void DeallocateRegister(UInt8 Index) {
         assert(Index <= 15 && "Invalid register index");
         Registers[Index].IsAllocated = false;
     }
@@ -138,6 +140,10 @@ struct Emitter {
     EmitOptions CurrentOptions;
 
     Assembler CodeAssembler;
+    struct {
+        bool IsInReturn;
+        bool IsInCall;
+    } Context;
 
     RegisterInfo Registers[15] = {
         {0, false},
@@ -157,9 +163,21 @@ struct Emitter {
         {14, false },
     };
 
+    struct StringTmp {
+        static StringTmp New(Str Data, UInt Size) {
+            return StringTmp{Data, Size};
+        }
+        void Destroy(this StringTmp& /*Self*/) {}
+
+        Str Data;
+        USize Size;
+    };
+
     SymbolTable<Function> Functions;
     SymbolTable<Global> Globals;
     SymbolTable<Constant> Constants;
+    std::unordered_map<std::u8string, codefile::StringType> NativeLibraries;
+    List<StringTmp> Strings;
 };
 
 }

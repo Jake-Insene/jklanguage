@@ -3,8 +3,7 @@
 #include "jkc/AST/Statement.h"
 #include "jkc/AST/Expresion.h"
 #include "jkc/AST/FunctionParameter.h"
-#include "jkr/Lib/List.h"
-#include "jkr/Mem/Ptr.h"
+#include "stdjk/Mem/Ptr.h"
 #include <string>
 
 namespace AST {
@@ -15,14 +14,8 @@ struct Function : Statement {
     std::u8string Name;
     TypeDecl FunctionType = TypeDecl();
     List<FunctionParameter> Parameters = {};
-
+    
     bool IsDefined = false;
-    bool IsNative = false;
-
-    struct {
-        std::u8string Entry;
-        std::u8string Library;
-    } NativeInfo;
 
     mem::Ptr<Block> Body = {};
 };

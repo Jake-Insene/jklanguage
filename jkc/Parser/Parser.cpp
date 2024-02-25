@@ -4,7 +4,7 @@
 
 #include <stdarg.h>
 
-using ParseExpresionFn = mem::Ptr<AST::Expresion> (Parser::*)(bool, mem::Ptr<AST::Expresion>);
+using ParseExpresionFn = mem::Ptr<AST::Expresion> (Parser::*)(List<Attribute>, bool, mem::Ptr<AST::Expresion>);
 
 struct ParseRule {
     TokenType TokenType;
@@ -131,7 +131,7 @@ AST::TypeDecl Parser::ParseType() {
             Advance();
 
             if (Current.Type == TokenType::ConstInteger) {
-                type.ArrayLen = (Uint32)Current.Value.Unsigned;
+                type.ArrayLen = (UInt32)Current.Value.Unsigned;
                 Advance();
             }
             else {
@@ -154,10 +154,11 @@ AST::TypeDecl Parser::ParseType() {
 // Expresions
 //////////////////////////////////////////////////////////////////////////////////////////
 
-mem::Ptr<AST::Expresion> Parser::ParseConstantValue(bool, mem::Ptr<AST::Expresion> /*RHS*/) {
+mem::Ptr<AST::Expresion> Parser::ParseConstantValue(List<Attribute> Attribs, bool, mem::Ptr<AST::Expresion> /*RHS*/) {
     auto constVal = mem::New<AST::Constant>(
         AST::ExpresionType::Constant, 
-        SourceLocation(Last.Location.FileName, Last.Location.Line)
+        SourceLocation(Last.Location.FileName, Last.Location.Line),
+        Attribs
     );
 
     if (Last.Type == TokenType::ConstInteger) {
@@ -181,7 +182,7 @@ mem::Ptr<AST::Expresion> Parser::ParseConstantValue(bool, mem::Ptr<AST::Expresio
         constVal->ValueType.Flags |= AST::TypeDecl::Array;
         constVal->ValueType.Flags |= AST::TypeDecl::Ptr;
         
-        constVal->ValueType.ArrayLen = (Uint32)Last.Value.Str.size();
+        constVal->ValueType.ArrayLen = (UInt32)Last.Value.Str.size();
         constVal->ValueType.SizeInBits = 8;
 
         constVal->String = std::move(Last.Value.Str);
@@ -190,19 +191,21 @@ mem::Ptr<AST::Expresion> Parser::ParseConstantValue(bool, mem::Ptr<AST::Expresio
     return mem::Ptr<AST::Expresion>::FromPtr(constVal);
 }
 
-mem::Ptr<AST::Expresion> Parser::ParseIdentifier(bool /*CanAssign*/, mem::Ptr<AST::Expresion>) {
+mem::Ptr<AST::Expresion> Parser::ParseIdentifier(List<Attribute> Attribs, bool /*CanAssign*/, mem::Ptr<AST::Expresion>) {
     auto id = mem::New<AST::Identifier>(
         AST::ExpresionType::Identifier,
-        SourceLocation(Last.Location.FileName, Last.Location.Line)
+        SourceLocation(Last.Location.FileName, Last.Location.Line),
+        Attribs
     );
     id->ID = std::move(Last.Value.Str);
     return mem::Ptr<AST::Expresion>::FromPtr(id);
 }
 
-mem::Ptr<AST::Expresion> Parser::ParseGroup(bool, mem::Ptr<AST::Expresion>) {
+mem::Ptr<AST::Expresion> Parser::ParseGroup(List<Attribute> Attribs, bool, mem::Ptr<AST::Expresion>) {
     auto group = mem::New<AST::Group>(
         AST::ExpresionType::Group,
-        SourceLocation(Last.Location.FileName, Last.Location.Line)
+        SourceLocation(Last.Location.FileName, Last.Location.Line),
+        Attribs
     );
 
     group->Value = ParseExpresion(ParsePrecedence::Assignment);
@@ -210,10 +213,11 @@ mem::Ptr<AST::Expresion> Parser::ParseGroup(bool, mem::Ptr<AST::Expresion>) {
     return mem::Ptr<AST::Expresion>::FromPtr(group);
 }
 
-mem::Ptr<AST::Expresion> Parser::ParseCall(bool, mem::Ptr<AST::Expresion> Expresion) {
+mem::Ptr<AST::Expresion> Parser::ParseCall(List<Attribute> Attribs, bool, mem::Ptr<AST::Expresion> Expresion) {
     auto call = mem::New<AST::Call>(
         AST::ExpresionType::Call,
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
 
     call->Target = std::move(Expresion);
@@ -232,19 +236,21 @@ mem::Ptr<AST::Expresion> Parser::ParseCall(bool, mem::Ptr<AST::Expresion> Expres
     return mem::Ptr<AST::Expresion>::FromPtr(call);
 }
 
-mem::Ptr<AST::Expresion> Parser::ParseDot(bool, mem::Ptr<AST::Expresion>) {
+mem::Ptr<AST::Expresion> Parser::ParseDot(List<Attribute> Attribs, bool, mem::Ptr<AST::Expresion>) {
     auto dot = mem::New<AST::Dot>(
         AST::ExpresionType::Dot,
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
     Advance();
     return mem::Ptr<AST::Expresion>::FromPtr(dot);
 }
 
-mem::Ptr<AST::Expresion> Parser::ParseUnary(bool, mem::Ptr<AST::Expresion>) {
+mem::Ptr<AST::Expresion> Parser::ParseUnary(List<Attribute> Attribs, bool, mem::Ptr<AST::Expresion>) {
     auto unary = mem::New<AST::Unary>(
         AST::ExpresionType::Unary,
-        SourceLocation(Last.Location.FileName, Last.Location.Line)
+        SourceLocation(Last.Location.FileName, Last.Location.Line),
+        Attribs
     );
 
     switch (Last.Type) {
@@ -257,10 +263,11 @@ mem::Ptr<AST::Expresion> Parser::ParseUnary(bool, mem::Ptr<AST::Expresion>) {
     return mem::Ptr<AST::Expresion>::FromPtr(unary);
 }
 
-mem::Ptr<AST::Expresion> Parser::ParseBinaryOp(bool, mem::Ptr<AST::Expresion> Expresion) {
+mem::Ptr<AST::Expresion> Parser::ParseBinaryOp(List<Attribute> Attribs, bool, mem::Ptr<AST::Expresion> Expresion) {
     auto binOp = mem::New<AST::BinaryOp>(
         AST::ExpresionType::BinaryOp,
-        SourceLocation(Last.Location.FileName, Last.Location.Line)
+        SourceLocation(Last.Location.FileName, Last.Location.Line),
+        Attribs
     );
 
     binOp->Left = std::move(Expresion);
@@ -288,15 +295,16 @@ mem::Ptr<AST::Expresion> Parser::ParseBinaryOp(bool, mem::Ptr<AST::Expresion> Ex
     ParseRule rule = ParserRuler::GetRule(Current);
 
     Advance();
-    binOp->Right = ParseExpresion((ParsePrecedence)((Uint32)rule.Precedence + 1));
+    binOp->Right = ParseExpresion((ParsePrecedence)((UInt32)rule.Precedence + 1));
 
     return mem::Ptr<AST::Expresion>::FromPtr(binOp);
 }
 
-mem::Ptr<AST::Expresion> Parser::ParseArrayList(bool, mem::Ptr<AST::Expresion>) {
+mem::Ptr<AST::Expresion> Parser::ParseArrayList(List<Attribute> Attribs, bool, mem::Ptr<AST::Expresion>) {
     auto arrayList = mem::New<AST::ArrayList>(
         AST::ExpresionType::ArrayList,
-        SourceLocation(Last.Location.FileName, Last.Location.Line)
+        SourceLocation(Last.Location.FileName, Last.Location.Line),
+        Attribs
     );
     
     while (Current.Type != TokenType::RightBrace && Current.Type != TokenType::EndOfFile) {
@@ -326,10 +334,10 @@ mem::Ptr<AST::Expresion> Parser::ParseExpresion(ParsePrecedence Precedence) {
     }
 
     bool canAssign = Precedence <= ParsePrecedence::Assignment;
-    expr = (this->*prefix)(canAssign, mem::Ptr<AST::Expresion>());
+    expr = (this->*prefix)({}, canAssign, mem::Ptr<AST::Expresion>());
 
     while (Precedence < ParserRuler::GetRule(Current).Precedence) {
-        expr = (this->*ParserRuler::GetRule(Current).Infix)(canAssign, std::move(expr));
+        expr = (this->*ParserRuler::GetRule(Current).Infix)({}, canAssign, std::move(expr));
     }
 
     if (canAssign && Current.Type == TokenType::Equal) {
@@ -339,15 +347,19 @@ mem::Ptr<AST::Expresion> Parser::ParseExpresion(ParsePrecedence Precedence) {
     return expr;
 }
 
-mem::Ptr<AST::Block> Parser::ParseBlock() {
+mem::Ptr<AST::Block> Parser::ParseBlock(List<Attribute> Attribs) {
     auto block = mem::New<AST::Block>(
         AST::ExpresionType::Block,
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
 
     while (Current.Type != TokenType::RightBrace && Current.Type != TokenType::EndOfFile) {
         mem::Ptr<AST::Statement> statement = block->Statements.Push(nullptr) = ParseStatement();
 
+        if (!statement.IsValid) {
+            continue;
+        }
         if (statement->Type == AST::StatementType::Return) {
             block->HasReturn = true;
         }
@@ -388,12 +400,19 @@ void Parser::ParseFunctionParameters(mem::Ptr<AST::Function>& Function) {
     }
 }
 
-mem::Ptr<AST::Statement> Parser::ParseFunction() {
+mem::Ptr<AST::Statement> Parser::ParseFunction(List<Attribute> Attribs) {
     auto function = mem::New<AST::Function>(
         AST::StatementType::Function, 
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
     Advance(); // fn
+
+    bool isNative = false;
+    for (auto& attr : Attribs) {
+        if (attr.Type == Attribute::Native)
+            isNative = true;
+    }
 
     Expected(TokenType::Identifier, STR("A identifier was expected"));
     function->Name = std::move(Last.Value.Str);
@@ -402,20 +421,23 @@ mem::Ptr<AST::Statement> Parser::ParseFunction() {
     ParseFunctionParameters(function);
     Expected(TokenType::RightParent, STR("')' was expected"));
 
-    function->FunctionType = ParseType();
-    if (function->FunctionType.Primitive == AST::TypeDecl::Type::Unknown) {
-        ErrorAtCurrent(STR("A type was expected"));
-        Advance();
+    if (Current.Type == TokenType::Semicolon || Current.Type == TokenType::LeftBrace) {
+        function->FunctionType = AST::TypeDecl::Void();
     }
-
-    ParseAttributes(function);
+    else {
+        function->FunctionType = ParseType();
+        if (function->FunctionType.Primitive == AST::TypeDecl::Type::Unknown) {
+            ErrorAtCurrent(STR("A type was expected"));
+            Advance();
+        }
+    }
 
     if (Current.Type == TokenType::Semicolon) {
         function->IsDefined = false;
         Advance();
     }
     else {
-        if (function->IsNative) {
+        if (isNative) {
             ErrorAtCurrent(STR("A native function can't be defined"));
             goto return_fn;
         }
@@ -426,7 +448,7 @@ mem::Ptr<AST::Statement> Parser::ParseFunction() {
         }
         function->IsDefined= true;
 
-        function->Body = ParseBlock();
+        function->Body = ParseBlock({});
         Expected(TokenType::RightBrace, STR("'}' was expected"));
 
         if (!function->Body->HasReturn) {
@@ -434,7 +456,8 @@ mem::Ptr<AST::Statement> Parser::ParseFunction() {
                 function->Body->Statements.Push(nullptr) = mem::Ptr<AST::Statement>::FromPtr(
                     mem::New<AST::Return>(
                         AST::StatementType::Return, 
-                        SourceLocation(Last.Location.FileName, Last.Location.Line)
+                        SourceLocation(Last.Location.FileName, Last.Location.Line),
+                        Attribs
                     )
                 );
             }
@@ -451,10 +474,11 @@ return_fn:
     return mem::Ptr<AST::Statement>::FromPtr(function);
 }
 
-mem::Ptr<AST::Statement> Parser::ParseReturn() {
+mem::Ptr<AST::Statement> Parser::ParseReturn(List<Attribute> Attribs) {
     auto ret = mem::New<AST::Return>(
         AST::StatementType::Return,
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
     Advance();
 
@@ -468,10 +492,11 @@ mem::Ptr<AST::Statement> Parser::ParseReturn() {
     return mem::Ptr<AST::Statement>::FromPtr(ret);
 }
 
-mem::Ptr<AST::Statement> Parser::ParseConstVal() {
+mem::Ptr<AST::Statement> Parser::ParseConstVal(List<Attribute> Attribs) {
     auto constVal = mem::New<AST::ConstVal>(
         AST::StatementType::ConstVal, 
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
     Advance(); // const
 
@@ -492,22 +517,28 @@ mem::Ptr<AST::Statement> Parser::ParseConstVal() {
     return mem::Ptr<AST::Statement>::FromPtr(constVal);
 }
 
-mem::Ptr<AST::Statement> Parser::ParseVar() {
+mem::Ptr<AST::Statement> Parser::ParseVar(List<Attribute> Attribs) {
     auto var = mem::New<AST::Var>(
         AST::StatementType::Var,
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
     Advance();
 
     Expected(TokenType::Identifier, STR("A identifier was expected"));
     var->Name = std::move(Last.Value.Str);
 
-    Expected(TokenType::Colon, STR("':' was expected"));
-
-    var->VarType = ParseType();
-    if (var->VarType.Primitive == AST::TypeDecl::Type::Unknown) {
-        ErrorAtCurrent(STR("A type was expected"));
-        Advance();
+    if (Current.Type != TokenType::Equal)
+    {
+        Expected(TokenType::Colon, STR("':' was expected"));
+        var->VarType = ParseType();
+        if (var->VarType.Primitive == AST::TypeDecl::Type::Unknown) {
+            ErrorAtCurrent(STR("A type was expected"));
+            Advance();
+        }
+    }
+    else {
+        var->VarType = AST::TypeDecl();
     }
 
     if (Current.Type == TokenType::Equal) {
@@ -521,10 +552,11 @@ mem::Ptr<AST::Statement> Parser::ParseVar() {
     return mem::Ptr<AST::Statement>::FromPtr(var);
 }
 
-mem::Ptr<AST::Statement> Parser::ParseIf() {
+mem::Ptr<AST::Statement> Parser::ParseIf(List<Attribute> Attribs) {
     auto _if = mem::New<AST::If>(
         AST::StatementType::If,
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
     Advance(); // if
 
@@ -533,26 +565,27 @@ mem::Ptr<AST::Statement> Parser::ParseIf() {
     Expected(TokenType::RightParent, STR("')' was expected"));
 
     Expected(TokenType::LeftBrace, STR("'{' was expected"));
-    _if->Body = mem::Ptr<AST::Expresion>::New(ParseBlock().Data);
+    _if->Body = mem::Ptr<AST::Expresion>::New(ParseBlock({}).Data);
     Expected(TokenType::RightBrace, STR("'}' was expected"));
 
     if (Current.Type == TokenType::Elif) {
-        _if->Elif = ParseIf();
+        _if->Elif = ParseIf({});
     }
     else if (Current.Type == TokenType::Else) {
         Advance(); // else
         Expected(TokenType::LeftBrace, STR("'{' was expected"));
-        _if->ElseBlock = mem::Ptr<AST::Expresion>::New(ParseBlock().Data);
+        _if->ElseBlock = mem::Ptr<AST::Expresion>::New(ParseBlock({}).Data);
         Expected(TokenType::RightBrace, STR("'}' was expected"));
     }
 
     return mem::Ptr<AST::Statement>::FromPtr(_if);
 }
 
-mem::Ptr<AST::Statement> Parser::ParseExpresionStatement() {
+mem::Ptr<AST::Statement> Parser::ParseExpresionStatement(List<Attribute> Attribs) {
     auto es = mem::New<AST::ExpresionStatement>(
         AST::StatementType::ExpresionStatement, 
-        SourceLocation(Current.Location.FileName, Current.Location.Line)
+        SourceLocation(Current.Location.FileName, Current.Location.Line),
+        Attribs
     );
     es->Value = ParseExpresion(ParsePrecedence::Assignment);
     Expected(TokenType::Semicolon, STR("';' was expected"));
@@ -562,62 +595,84 @@ mem::Ptr<AST::Statement> Parser::ParseExpresionStatement() {
 mem::Ptr<AST::Statement> Parser::ParseStatement() {
     mem::Ptr<AST::Statement> statement = {};
 
+check:
     if (MustSyncronize) {
         Syncronize();
         if (Current.Type == TokenType::EndOfFile)
             return statement;
     }
 
+    List<Attribute> Attribs = ParseCompilerAttributes();
+    if (MustSyncronize)
+        goto check;
+
     if (Current.Type == TokenType::Fn) {
-        statement = ParseFunction();
+        statement = ParseFunction(Attribs);
     }
     else if (Current.Type == TokenType::Return) {
-        statement = ParseReturn();
+        statement = ParseReturn(Attribs);
     }
     else if (Current.Type == TokenType::Var) {
-        statement = ParseVar();
+        statement = ParseVar(Attribs);
     }
     else if (Current.Type == TokenType::Const) {
-        statement = ParseConstVal();
+        statement = ParseConstVal(Attribs);
     }
     else if (Current.Type == TokenType::If) {
-        statement = ParseIf();
+        statement = ParseIf(Attribs);
     }
     else if (Current.Type == TokenType::LeftBrace) {
         auto es = mem::New<AST::ExpresionStatement>(
             AST::StatementType::ExpresionStatement, 
-            SourceLocation(Current.Location.FileName, Current.Location.Line)
+            SourceLocation(Current.Location.FileName, Current.Location.Line),
+            Attribs
         );
         Advance();
-        es->Value = mem::Ptr<AST::Expresion>::FromPtr(ParseBlock());
+        es->Value = mem::Ptr<AST::Expresion>::FromPtr(ParseBlock({}));
         Advance();
         statement = mem::Ptr<AST::Statement>::FromPtr(es);
     }
     else {
-        statement = ParseExpresionStatement();
+        statement = ParseExpresionStatement(Attribs);
     }
 
     return statement;
 }
 
-void Parser::ParseAttributes(mem::Ptr<AST::Function>& Function) {
-    if (IsAttribute(Current)) {
-        Advance();
-        if (Last.Value.Str == STR("native")) {
-            Function->IsNative = true;
-            Expected(TokenType::ConstString, STR("A library name was expected"));
-            Function->NativeInfo.Library = std::move(Last.Value.Str);
-            Expected(TokenType::ConstString, STR("A entry name was expected"));
-            Function->NativeInfo.Entry = std::move(Last.Value.Str);
+List<Attribute> Parser::ParseCompilerAttributes() {
+    List<Attribute> attribs = {};
+
+    while (Current.Type == TokenType::CompilerAttribute) {
+        if (Current.Value.Str == STR("Native")) {
+            auto& attrib = attribs.Push();
+            attrib.Type = Attribute::Native;
+            if (Next.Type != TokenType::LeftParent) {
+                Advance();
+                continue;
+            }
+
+            Advance(); // CompilerAttribute
+            Advance(); // (
+
+            if (!Expected(TokenType::ConstString, STR("A string was expected"))) {
+                continue;
+            }
+
+            attrib.S = std::move(Current.Value.Str);
+        }
+        else {
+            ErrorAtCurrent(STR("Unknown compiler attribute '{s}'"), Current.Value.Str.c_str());
         }
     }
+
+    return attribs;
 }
 
 AST::Program Parser::ParseContent(Str FileName, Slice<Char> Content) {
     std::u8string name = FileName;
     name = name.substr(0, name.find_last_of('.'));
 
-    AST::Program program = AST::Program::New(name.c_str());
+    AST::Program program = AST::Program::New(std::move(name));
     SourceLexer.Set(FileName, Content);
 
     Advance();

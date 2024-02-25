@@ -5,6 +5,8 @@
 namespace AST {
 
 void Statement::Destroy(this Statement& Self) {
+    Self.Attribs.Destroy();
+
     if (Self.Type == StatementType::Function) {
         Function* fn = Cast<Function*>(&Self);
         fn->Name.~basic_string();

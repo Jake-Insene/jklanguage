@@ -1,5 +1,6 @@
 #pragma once
 #include "jkc/Lexer/Token.h"
+#include "stdjk/List.h"
 
 namespace AST {
 
@@ -30,10 +31,11 @@ enum class ExpresionType {
 
 struct Expresion {
 
-    static constexpr Expresion New(ExpresionType Type, const SourceLocation& Location) {
+    static Expresion New(ExpresionType Type, const SourceLocation& Location, List<Attribute> Attribs = {}) {
         return Expresion{
             .Type = Type,
             .Location = Location,
+            .Attribs = Attribs,
         };
     }
 
@@ -41,6 +43,7 @@ struct Expresion {
 
     ExpresionType Type;
     SourceLocation Location;
+    List<Attribute> Attribs;
 };
 
 }

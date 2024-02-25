@@ -4,9 +4,18 @@
 #include "jkc/AST/Type.h"
 #include "jkc/CodeGen/SymbolTable.h"
 #include <jkr/CodeFile/OpCodes.h>
-#include <string_view>
 
 namespace CodeGen {
+
+struct Constant {
+    AST::TypeDecl Type = {};
+    union {
+        Int Signed = 0;
+        UInt Unsigned;
+        Float Real;
+        void* Array;
+    };
+};
 
 struct [[nodiscard]] Local {
     Str Name = STR("");
@@ -23,6 +32,7 @@ struct [[nodiscard]] Global {
     Str Name = STR("");
     AST::TypeDecl Type = {};
     codefile::GlobalType Index = 0;
+    Constant Value;
 };
 
 enum class CallConv {
@@ -38,26 +48,27 @@ enum class CallConv {
 
 struct [[nodiscard]] Function {
     Str Name = STR("");
+
     AST::TypeDecl Type = {};
     MemoryBuffer Code = {};
+
     SymbolTable<Local> Locals = {};
     Byte CountOfArguments = 0;
     Byte RegisterArguments = 0;
     Byte StackArguments = 0;
     Byte CountOfStackLocals = 0;
     codefile::FunctionType Index = 0;
+
+    codefile::StringType LibraryIndex;
+    codefile::StringType EntryIndex;
+
     bool IsDefined = false;
+    bool IsNative = false;
     CallConv CC = CallConv::Stack;
 
-    struct {
-        Str Entry = STR("");
-        Str Library = STR("");
-    } NativeInfo;
-};
-
-struct RegisterInfo {
-    Byte Index = 0;
-    bool IsAllocated = false;
+    [[nodiscard]] constexpr bool IsRegisterBased() const {
+        return CC == CallConv::Register || CC == CallConv::RegS;
+    }
 };
 
 struct Assembler {
@@ -145,30 +156,30 @@ struct Assembler {
     }
 
     constexpr void Const4(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Const) {
-        Fn.Code << (Byte)codefile::OpCode::Const4;
+        Fn.Code << (Byte)codefile::OpCode::Mov4;
         Fn.Code << (Byte)(Dest | (Const << 4));
     }
 
     constexpr void Const8(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Const) {
-        Fn.Code << (Byte)codefile::OpCode::Const8;
+        Fn.Code << (Byte)codefile::OpCode::Mov8;
         Fn.Code << Dest;
         Fn.Code << Const;
     }
 
-    constexpr void Const16(this Assembler& /*Self*/, Function& Fn, Byte Dest, Uint16 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Const16;
+    constexpr void Const16(this Assembler& /*Self*/, Function& Fn, Byte Dest, UInt16 Const) {
+        Fn.Code << (Byte)codefile::OpCode::Mov16;
         Fn.Code << Dest;
         Fn.Code << Const;
     }
 
-    constexpr void Const32(this Assembler& /*Self*/, Function& Fn, Byte Dest, Uint32 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Const32;
+    constexpr void Const32(this Assembler& /*Self*/, Function& Fn, Byte Dest, UInt32 Const) {
+        Fn.Code << (Byte)codefile::OpCode::Mov32;
         Fn.Code << Dest;
         Fn.Code << Const;
     }
 
-    constexpr void Const64(this Assembler& /*Self*/, Function& Fn, Byte Dest, Uint64 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Const64;
+    constexpr void Const64(this Assembler& /*Self*/, Function& Fn, Byte Dest, UInt64 Const) {
+        Fn.Code << (Byte)codefile::OpCode::Mov64;
         Fn.Code << Dest;
         Fn.Code << Const;
     }
@@ -218,7 +229,7 @@ struct Assembler {
         Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
     }
 
-    constexpr void Add16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+    constexpr void Add16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::Add16;
         Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
         Fn.Code << Byte(Constant >> 8);
@@ -234,7 +245,7 @@ struct Assembler {
         Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
     }
 
-    constexpr void IAdd16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+    constexpr void IAdd16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::IAdd16;
         Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
         Fn.Code << Byte(Constant >> 8);
@@ -255,7 +266,7 @@ struct Assembler {
         Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
     }
 
-    constexpr void Sub16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+    constexpr void Sub16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::Sub16;
         Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
         Fn.Code << Byte(Constant >> 8);
@@ -271,7 +282,7 @@ struct Assembler {
         Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
     }
 
-    constexpr void ISub16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+    constexpr void ISub16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::ISub16;
         Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
         Fn.Code << Byte(Constant >> 8);
@@ -292,7 +303,7 @@ struct Assembler {
         Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
     }
 
-    constexpr void Mul16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+    constexpr void Mul16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::Mul16;
         Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
         Fn.Code << Byte(Constant >> 8);
@@ -308,7 +319,7 @@ struct Assembler {
         Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
     }
 
-    constexpr void IMul16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+    constexpr void IMul16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::IMul16;
         Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
         Fn.Code << Byte(Constant >> 8);
@@ -329,7 +340,7 @@ struct Assembler {
         Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
     }
 
-    constexpr void Div16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+    constexpr void Div16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::Div16;
         Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
         Fn.Code << Byte(Constant >> 8);
@@ -345,7 +356,7 @@ struct Assembler {
         Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
     }
 
-    constexpr void IDiv16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Uint16 Constant) {
+    constexpr void IDiv16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::IDiv16;
         Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
         Fn.Code << Byte(Constant >> 8);
@@ -405,7 +416,7 @@ struct Assembler {
         Fn.Code << Constant;
     }
 
-    constexpr void Ret16(this Assembler& /*Self*/, Function& Fn, Uint16 Constant) {
+    constexpr void Ret16(this Assembler& /*Self*/, Function& Fn, UInt16 Constant) {
         Fn.Code << (Byte)codefile::OpCode::Ret16;
         Fn.Code << Constant;
     }
@@ -420,56 +431,58 @@ struct Assembler {
         Fn.Code << Index;
     }
 
+    constexpr void StringGet4(this Assembler& /*Self*/, Function& Fn, Byte Reg, Byte S) {
+        Fn.Code << (Byte)codefile::OpCode::StringGet4;
+        Fn.Code << Byte(Reg | (S << 4));
+    }
+
+    constexpr void StringGet(this Assembler& /*Self*/, Function& Fn, Byte Reg, codefile::StringType S) {
+        Fn.Code << (Byte)codefile::OpCode::StringGet;
+        Fn.Code << Reg;
+        Fn.Code << S;
+    }
+
     constexpr void Push(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::Push;
+        Fn.Code << (Byte)codefile::OpCode::Push;
         Fn.Code << Reg;
     }
 
     constexpr void LocalPush(this Assembler& /*Self*/, Function& Fn, codefile::LocalType Idx) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::LocalPush;
+        Fn.Code << (Byte)codefile::OpCode::LocalPush;
         Fn.Code << Idx;
     }
 
     constexpr void GlobalPush(this Assembler& /*Self*/, Function& Fn, codefile::GlobalType Idx) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::GlobalPush;
+        Fn.Code << (Byte)codefile::OpCode::GlobalPush;
         Fn.Code << Idx;
     }
 
     constexpr void Push8(this Assembler& /*Self*/, Function& Fn, Byte C) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::Push8;
+        Fn.Code << (Byte)codefile::OpCode::Push8;
         Fn.Code << C;
     }
 
-    constexpr void Push16(this Assembler& /*Self*/, Function& Fn, Uint16 C) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::Push16;
+    constexpr void Push16(this Assembler& /*Self*/, Function& Fn, UInt16 C) {
+        Fn.Code << (Byte)codefile::OpCode::Push16;
         Fn.Code << C;
     }
 
-    constexpr void Push32(this Assembler& /*Self*/, Function& Fn, Uint32 C) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::Push32;
+    constexpr void Push32(this Assembler& /*Self*/, Function& Fn, UInt32 C) {
+        Fn.Code << (Byte)codefile::OpCode::Push32;
         Fn.Code << C;
     }
 
-    constexpr void Push64(this Assembler& /*Self*/, Function& Fn, Uint64 C) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::Push64;
+    constexpr void Push64(this Assembler& /*Self*/, Function& Fn, UInt64 C) {
+        Fn.Code << (Byte)codefile::OpCode::Push64;
         Fn.Code << C;
     }
 
     constexpr void PopTop(this Assembler& /*Self*/, Function& Fn) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::PopTop;
+        Fn.Code << (Byte)codefile::OpCode::PopTop;
     }
 
     constexpr void Pop(this Assembler& /*Self*/, Function& Fn, Byte Dest) {
-        Fn.Code << (Byte)codefile::OpCode::StackPrefix;
-        Fn.Code << (Byte)codefile::OpCodeStack::Pop;
+        Fn.Code << (Byte)codefile::OpCode::Pop;
         Fn.Code << Dest;
     }
 

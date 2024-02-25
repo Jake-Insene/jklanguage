@@ -1,5 +1,5 @@
 #pragma once
-#include "jkr/CoreHeader.h"
+#include "stdjk/CoreHeader.h"
 #include <string>
 
 enum class TokenType {
@@ -28,6 +28,8 @@ enum class TokenType {
     TypeInt,
     TypeUInt,
     TypeFloat,
+
+    CompilerAttribute,
 
     Comma,
     Dot,
@@ -60,6 +62,30 @@ enum class TokenType {
     SlashEqual,
 
     EndOfFile,
+};
+
+
+
+struct Attribute {
+    enum {
+        None = 0,
+        Native,
+        Export,
+        Import,
+    } Type;
+
+    union Value {
+        UInt N = 0;
+    } Arg;
+    std::u8string S;
+
+    static Attribute New() {
+        return Attribute();
+    }
+
+    constexpr void Destroy(this Attribute& Self) {
+        Self.S.~basic_string();
+    }
 };
 
 struct SourceLocation {

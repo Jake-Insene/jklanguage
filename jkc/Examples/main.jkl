@@ -1,21 +1,9 @@
 
-fn Fact(Num : int) int {
-    if(Num == 0) {
-        return 1;
-    }
-    return Num * Fact(Num - 1);
-}
+#Native
+fn write(Fd: UInt, Buff: []const Byte, Size: UInt) Void;
 
-fn Sum(A: int, B: int) int {
-    return A + B;
-}
+fn Main() Int {
+    write(0U, "Hello World\n", 12U);
 
-fn Square(Num: int) int {
-    return Num;
-}
-
-fn Print(Format: []const byte, Args: any) void;
-
-fn Main() int {
-    return "";
+    return 0;
 }

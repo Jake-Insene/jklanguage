@@ -109,27 +109,27 @@ struct Parser {
 
     AST::TypeDecl            ParseType();
 
-    mem::Ptr<AST::Expresion> ParseConstantValue(bool CanAssign, mem::Ptr<AST::Expresion>);
-    mem::Ptr<AST::Expresion> ParseIdentifier(bool CanAssign, mem::Ptr<AST::Expresion>);
-    mem::Ptr<AST::Expresion> ParseGroup(bool CanAssign, mem::Ptr<AST::Expresion>);
-    mem::Ptr<AST::Expresion> ParseCall(bool CanAssign, mem::Ptr<AST::Expresion> Left);
-    mem::Ptr<AST::Expresion> ParseDot(bool CanAssign, mem::Ptr<AST::Expresion> Left);
-    mem::Ptr<AST::Expresion> ParseUnary(bool CanAssign, mem::Ptr<AST::Expresion>);
-    mem::Ptr<AST::Expresion> ParseBinaryOp(bool CanAssign, mem::Ptr<AST::Expresion> Left);
-    mem::Ptr<AST::Expresion> ParseArrayList(bool CanAssign, mem::Ptr<AST::Expresion>);
+    mem::Ptr<AST::Expresion> ParseConstantValue(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
+    mem::Ptr<AST::Expresion> ParseIdentifier(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
+    mem::Ptr<AST::Expresion> ParseGroup(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
+    mem::Ptr<AST::Expresion> ParseCall(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion> Left);
+    mem::Ptr<AST::Expresion> ParseDot(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion> Left);
+    mem::Ptr<AST::Expresion> ParseUnary(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
+    mem::Ptr<AST::Expresion> ParseBinaryOp(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion> Left);
+    mem::Ptr<AST::Expresion> ParseArrayList(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
 
     mem::Ptr<AST::Expresion> ParseExpresion(ParsePrecedence Precedence);
-    mem::Ptr<AST::Block>     ParseBlock();
+    mem::Ptr<AST::Block>     ParseBlock(List<Attribute> Attribs);
     void                     ParseFunctionParameters(mem::Ptr<AST::Function>& Function);
-    mem::Ptr<AST::Statement> ParseFunction();
-    mem::Ptr<AST::Statement> ParseReturn();
-    mem::Ptr<AST::Statement> ParseConstVal();
-    mem::Ptr<AST::Statement> ParseVar();
-    mem::Ptr<AST::Statement> ParseIf();
-    mem::Ptr<AST::Statement> ParseExpresionStatement();
+    mem::Ptr<AST::Statement> ParseFunction(List<Attribute> Attribs);
+    mem::Ptr<AST::Statement> ParseReturn(List<Attribute> Attribs);
+    mem::Ptr<AST::Statement> ParseConstVal(List<Attribute> Attribs);
+    mem::Ptr<AST::Statement> ParseVar(List<Attribute> Attribs);
+    mem::Ptr<AST::Statement> ParseIf(List<Attribute> Attribs);
+    mem::Ptr<AST::Statement> ParseExpresionStatement(List<Attribute> Attribs);
     mem::Ptr<AST::Statement> ParseStatement();
 
-    void ParseAttributes(mem::Ptr<AST::Function>& Function);
+    List<Attribute> ParseCompilerAttributes();
 
     StreamOutput& ErrorStream;
     
@@ -141,5 +141,5 @@ struct Parser {
     bool IsPanicMode = false;
     bool MustSyncronize = false;
 
-    static constexpr Uint32 MaxParameterSize = 32;
+    static constexpr UInt32 MaxParameterSize = 32;
 };

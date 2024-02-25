@@ -21,25 +21,15 @@ struct ProfileData {
 };
 
 struct CompileResult {
-    bool Success = true;
+    bool Success;
 };
 
 struct Compiler {
 
-    static Compiler New(StreamOutput& ErrorStream, const ProfileData& PD) {
-        return Compiler{
-            .ErrorStream = ErrorStream,
-            .Emitter = CodeGen::Emitter(ErrorStream),
-            .PD = PD,
-            .SourceParser = Parser::New(ErrorStream),
-            .PreParsedPrograms = List<AST::Program>::New(0)
-       };
-    }
+    static Compiler New(StreamOutput& ErrorStream, const ProfileData& PD);
 
     CompileResult CompileFromSource(this Compiler& Self, Str FileName, CodeGen::EmitOptions Options);
     CompileResult Disassembly(this Compiler& Self, Str FileName, StreamOutput& Output);
-
-    void PreParse(this Compiler& Self);
 
     void Destroy(this Compiler& Self);
 
@@ -60,7 +50,5 @@ struct Compiler {
     ProfileData PD;
 
     Parser SourceParser;
-    List<AST::Program> PreParsedPrograms;
-    bool PreParseSuccess = 0;
 };
 

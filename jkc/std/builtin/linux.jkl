@@ -1,5 +1,0 @@
-
-const Windows: bool = 0;
-const Linux: bool = 1;
-const Unix: bool = 1;
-

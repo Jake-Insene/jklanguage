@@ -1,5 +1,5 @@
 #pragma once
-#include "jkr/Lib/List.h"
+#include "stdjk/List.h"
 
 struct MemoryBuffer {
     using Iterator = List<Byte>::Iterator;
@@ -22,13 +22,13 @@ struct MemoryBuffer {
         return *this;
     }
     
-    constexpr MemoryBuffer& operator<<(Uint16 Val) {
+    constexpr MemoryBuffer& operator<<(UInt16 Val) {
         Buff.Push() = (Byte(Val));
         Buff.Push() = (Byte(Val >> 8));
         return *this;
     }
 
-    constexpr MemoryBuffer& operator<<(Uint32 Val) {
+    constexpr MemoryBuffer& operator<<(UInt32 Val) {
         Buff.Push() = (Byte(Val));
         Buff.Push() = (Byte(Val >> 8));
         Buff.Push() = (Byte(Val >> 16));
@@ -36,7 +36,7 @@ struct MemoryBuffer {
         return *this;
     }
     
-    constexpr MemoryBuffer& operator<<(Uint64 Val) {
+    constexpr MemoryBuffer& operator<<(UInt64 Val) {
         Buff.Push() = (Byte(Val));
         Buff.Push() = (Byte(Val >> 8));
         Buff.Push() = (Byte(Val >> 16));
@@ -55,7 +55,7 @@ struct MemoryBuffer {
     }
 
     constexpr void Write(Byte* Mem, UInt Count) {
-        for (Uint64 i = 0; i < Count; i++)
+        for (UInt64 i = 0; i < Count; i++)
             Buff.Push() = Mem[i];
     }
 

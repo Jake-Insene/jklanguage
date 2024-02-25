@@ -1,5 +1,5 @@
 #include "jkr/Runtime/Stack.h"
-#include "jkr/Mem/Allocator.h"
+#include "stdjk/Mem/Allocator.h"
 
 namespace runtime {
 

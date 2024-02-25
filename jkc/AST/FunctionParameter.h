@@ -1,5 +1,4 @@
 #pragma once
-
 #include "jkc/AST/Type.h"
 
 #include <string>

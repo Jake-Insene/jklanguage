@@ -1,6 +1,7 @@
 #include "jkc/CodeGen/Disassembler.h"
 #include "jkr/CodeFile/Header.h"
 #include "jkr/CodeFile/Function.h"
+#include "jkr/CodeFile/Global.h"
 #include "jkr/CodeFile/OpCodes.h"
 
 namespace CodeGen {
@@ -24,84 +25,8 @@ Str Registers[] = {
 	STR("rmem"),
 };
 
-static void DisStack(StreamOutput& Output, StreamInput& File, codefile::OpCodeStack S, Uint16& i) {
-	switch (S) {
-	case codefile::OpCodeStack::Push:
-	{
-		Byte reg = 0;
-		File.Read(&reg, 1);
-		i++;
-		Output.Println(STR("push {s}"), Registers[reg]);
-	}
-		break;
-	case codefile::OpCodeStack::LocalPush:
-	{
-		codefile::LocalType local = 0;
-		File.Read(Cast<Byte*>(&local), sizeof(codefile::LocalType));
-		i += sizeof(codefile::LocalType);
-		Output.Println(STR("local_push #{" LOCAL_PREFIX "}"), local);
-	}
-		break;
-	case codefile::OpCodeStack::GlobalPush:
-	{
-		codefile::GlobalType global = 0;
-		File.Read(Cast<Byte*>(&global), sizeof(codefile::GlobalType));
-		i += sizeof(codefile::LocalType);
-		Output.Println(STR("global_push #{" GLOBAL_PREFIX "}"), global);
-	}
-	break;
-		break;
-	case codefile::OpCodeStack::Push8:
-	{
-		Byte c = 0;
-		File.Read(&c, 1);
-		i++;
-		Output.Println(STR("push #0x{xb}"), c);
-	}
-		break;
-	case codefile::OpCodeStack::Push16:
-	{
-		Uint16 c = 0;
-		File.Read(Cast<Byte*>(&c), 1);
-		i += 2;
-		Output.Println(STR("push #0x{xw}"), c);
-	}
-		break;
-	case codefile::OpCodeStack::Push32:
-	{
-		Uint32 c = 0;
-		File.Read(Cast<Byte*>(&c), 1);
-		i += 4;
-		Output.Println(STR("push #0x{x}"), c);
-	}
-		break;
-	case codefile::OpCodeStack::Push64:
-	{
-		Uint64 c = 0;
-		File.Read(Cast<Byte*>(&c), 1);
-		i += 8;
-		Output.Println(STR("push #0x{X}"), c);
-	}
-		break;
-	case codefile::OpCodeStack::PopTop:
-		Output.Println(STR("poptop"));
-		break;
-	case codefile::OpCodeStack::Pop:
-	{
-		Byte reg = 0;
-		File.Read(&reg, 1);
-		i++;
-		Output.Println(STR("pop {s}"), Registers[reg]);
-	}
-		break;
-	default:
-		Output.Println(STR("Invalid Opcode {b}"), IntCast<Byte>(S));
-		break;
-	}
-}
-
-static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
-	Uint16 i = 0;
+static void DisCode(StreamOutput& Output, StreamInput& File, UInt32 Size) {
+	UInt16 i = 0;
 
 	while (i < Size) {
 		codefile::OpCode opcode = codefile::OpCode::Brk;
@@ -124,52 +49,52 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 			Output.Println(STR("mov {s}, {s}"), Registers[bil.Dest], Registers[bil.Src]);
 		}
 			break;
-		case codefile::OpCode::Const4:
+		case codefile::OpCode::Mov4:
 		{
 			Byte b = 0;
 			File.Read(&b, 1);
 			i += 1;
-			Output.Println(STR("mov.c4 {s}, #0x{xb}"), Registers[b & 0xF], Byte(b >> 4));
+			Output.Println(STR("mov.c4 {s}, #0x{xb:0}"), Registers[b & 0xF], Byte(b >> 4));
 		}
 		break;
-		case codefile::OpCode::Const8:
+		case codefile::OpCode::Mov8:
 		{
 			i += 2;
 			Byte reg = 0;
 			Byte c = 0;
 			File.Read(&reg, 1);
-			File.Read(&c, sizeof(c));
-			Output.Println(STR("mov.c8 {s}, #0x{xb}"), Registers[reg], c);
+			File.Read(&c, 1);
+			Output.Println(STR("mov.c8 {s}, #0x{xb:0}"), Registers[reg], c);
 		}
 			break;
-		case codefile::OpCode::Const16:
+		case codefile::OpCode::Mov16:
 		{
 			i += 3;
 			Byte reg = 0;
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(&reg, 1);
 			File.Read(Cast<Byte*>(&c), sizeof(c));
-			Output.Println(STR("mov.c16 {s}, #0x{xw}"), Registers[reg], c);
+			Output.Println(STR("mov.c16 {s}, #0x{xw:0}"), Registers[reg], c);
 		}
 			break;
-		case codefile::OpCode::Const32:
+		case codefile::OpCode::Mov32:
 		{
 			i += 5;
 			Byte reg = 0;
-			Uint32 c = 0;
+			UInt32 c = 0;
 			File.Read(&reg, 1);
 			File.Read(Cast<Byte*>(&c), sizeof(c));
-			Output.Println(STR("mov.c32 {s}, #0x{x}"), Registers[reg], c);
+			Output.Println(STR("mov.c32 {s}, #0x{x:0}"), Registers[reg], c);
 		}
 			break;
-		case codefile::OpCode::Const64:
+		case codefile::OpCode::Mov64:
 		{
 			i += 9;
 			Byte reg = 0;
 			UInt c = 0;
 			File.Read(&reg, 1);
 			File.Read(Cast<Byte*>(&c), sizeof(c));
-			Output.Println(STR("mov.c64 {s}, #0x{X}"), Registers[reg], c);
+			Output.Println(STR("mov.c64 {s}, #0x{X:0}"), Registers[reg], c);
 		}
 			break;
 		case codefile::OpCode::MovRes:
@@ -213,8 +138,20 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		}
 			break;
 		case codefile::OpCode::GlobalSet:
+		{
+			codefile::GIL gil = {}; 
+			File.Read(Cast<Byte*>(&gil), sizeof(codefile::GIL));
+			i += sizeof(codefile::GIL);
+			Output.Println(STR("global.set #0x{x" GLOBAL_PREFIX ":0}, {s}"), Registers[gil.SrcDest], gil.Index);
+		}
 			break;
 		case codefile::OpCode::GlobalGet:
+		{
+			codefile::GIL gil = {};
+			File.Read(Cast<Byte*>(&gil), sizeof(codefile::GIL));
+			i += sizeof(codefile::GIL);
+			Output.Println(STR("global.get {s}, #0x{x" GLOBAL_PREFIX ":0}"), Registers[gil.SrcDest], gil.Index);
+		}
 			break;
 		case codefile::OpCode::Inc:
 		{
@@ -376,7 +313,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		{
 			codefile::CIL cil = {};
 			File.Read(Cast<Byte*>(&cil), sizeof(codefile::CIL));
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 2);
 			i += 3;
 			Output.Println(
@@ -402,7 +339,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		{
 			codefile::CIL cil = {};
 			File.Read(Cast<Byte*>(&cil), sizeof(codefile::CIL));
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 2);
 			i += 3;
 			Output.Println(
@@ -428,7 +365,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		{
 			codefile::CIL cil = {};
 			File.Read(Cast<Byte*>(&cil), sizeof(codefile::CIL));
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 2);
 			i += 3;
 			Output.Println(
@@ -454,7 +391,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		{
 			codefile::CIL cil = {};
 			File.Read(Cast<Byte*>(&cil), sizeof(codefile::CIL));
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 2);
 			i += 3;
 			Output.Println(
@@ -480,7 +417,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		{
 			codefile::CIL cil = {};
 			File.Read(Cast<Byte*>(&cil), sizeof(codefile::CIL));
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 2);
 			i += 3;
 			Output.Println(
@@ -506,7 +443,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		{
 			codefile::CIL cil = {};
 			File.Read(Cast<Byte*>(&cil), sizeof(codefile::CIL));
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 2);
 			i += 3;
 			Output.Println(
@@ -532,7 +469,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		{
 			codefile::CIL cil = {};
 			File.Read(Cast<Byte*>(&cil), sizeof(codefile::CIL));
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 2);
 			i += 3;
 			Output.Println(
@@ -558,7 +495,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		{
 			codefile::CIL cil = {};
 			File.Read(Cast<Byte*>(&cil), sizeof(codefile::CIL));
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 2);
 			i += 3;
 			Output.Println(
@@ -736,14 +673,6 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 			Output.Println(STR("jge.c8 #0x{xb:0}"), ip);
 		}
 		break;
-		case codefile::OpCode::Call:
-		{
-			codefile::FunctionType index = 0;
-			File.Read(Cast<Byte*>(&index), 4);
-			i += sizeof(codefile::FunctionType);
-			Output.Println(STR("call #0x{x:0}"), index);
-		}
-			break;
 		case codefile::OpCode::Call8:
 		{
 			Byte index = 0;
@@ -752,6 +681,14 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 			Output.Println(STR("call.8 #0x{xb:0}"), index);
 		}
 		break;
+		case codefile::OpCode::Call:
+		{
+			codefile::FunctionType index = 0;
+			File.Read(Cast<Byte*>(&index), sizeof(codefile::FunctionType));
+			i += sizeof(codefile::FunctionType);
+			Output.Println(STR("call #0x{x:0}"), index);
+		}
+			break;
 		case codefile::OpCode::RetVoid:
 			Output.Println(STR("ret.void"));
 			break;
@@ -773,7 +710,7 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 		break;
 		case codefile::OpCode::Ret16:
 		{
-			Uint16 c = 0;
+			UInt16 c = 0;
 			File.Read(Cast<Byte*>(&c), 1);
 			i+=2;
 			Output.Println(STR("ret.c16 #0x{xw:0}"), c);
@@ -792,28 +729,106 @@ static void DisCode(StreamOutput& Output, StreamInput& File, Uint32 Size) {
 			codefile::GlobalType global = 0;
 			File.Read(Cast<Byte*>(&global), sizeof(codefile::LocalType));
 			i += sizeof(codefile::GlobalType);
-			Output.Println(STR("global.ret #0x{x}"), global);
+			Output.Println(STR("global.ret #0x{x" GLOBAL_PREFIX ":0}"), global);
 		}
 			break;
-		case codefile::OpCode::MemoryPrefix:
-			break;
-		case codefile::OpCode::StackPrefix:
+		case codefile::OpCode::StringGet4:
 		{
-			codefile::OpCodeStack stack = codefile::OpCodeStack::Push;
-			File.Read(Cast<Byte*>(&stack), 1);
+			Byte val = 0;
+			File.Read(&val, 1);
 			i++;
-			DisStack(Output, File, stack, i);
+			Output.Println(STR("string.get4 {s}, #0x{xb:0}"), Registers[val&0xF], Byte(val>>4));
 		}
 			break;
+		case codefile::OpCode::StringGet:
+		{
+			Byte reg = 0;
+			codefile::StringType str = 0;
+			
+			File.Read(&reg, 1);
+			File.Read(Cast<Byte*>(&str), sizeof(codefile::StringType));
+
+			i += (1 + sizeof(codefile::StringType));
+			Output.Println(STR("string.get {s}, #0x{x" STRING_PREFIX ":0}"), Registers[reg&0xF], str);
+		}
+			break;
+		case codefile::OpCode::Push:
+		{
+			Byte reg = 0;
+			File.Read(&reg, 1);
+			i++;
+			Output.Println(STR("push {s}"), Registers[reg]);
+		}
+		break;
+		case codefile::OpCode::LocalPush:
+		{
+			codefile::LocalType local = 0;
+			File.Read(Cast<Byte*>(&local), sizeof(codefile::LocalType));
+			i += sizeof(codefile::LocalType);
+			Output.Println(STR("local_push #{" LOCAL_PREFIX "}"), local);
+		}
+		break;
+		case codefile::OpCode::GlobalPush:
+		{
+			codefile::GlobalType global = 0;
+			File.Read(Cast<Byte*>(&global), sizeof(codefile::GlobalType));
+			i += sizeof(codefile::LocalType);
+			Output.Println(STR("global_push #{" GLOBAL_PREFIX "}"), global);
+		}
+		break;
+		break;
+		case codefile::OpCode::Push8:
+		{
+			Byte c = 0;
+			File.Read(&c, 1);
+			i++;
+			Output.Println(STR("push #0x{xb}"), c);
+		}
+		break;
+		case codefile::OpCode::Push16:
+		{
+			UInt16 c = 0;
+			File.Read(Cast<Byte*>(&c), 1);
+			i += 2;
+			Output.Println(STR("push #0x{xw}"), c);
+		}
+		break;
+		case codefile::OpCode::Push32:
+		{
+			UInt32 c = 0;
+			File.Read(Cast<Byte*>(&c), 1);
+			i += 4;
+			Output.Println(STR("push #0x{x}"), c);
+		}
+		break;
+		case codefile::OpCode::Push64:
+		{
+			UInt64 c = 0;
+			File.Read(Cast<Byte*>(&c), 1);
+			i += 8;
+			Output.Println(STR("push #0x{X}"), c);
+		}
+		break;
+		case codefile::OpCode::PopTop:
+			Output.Println(STR("poptop"));
+			break;
+		case codefile::OpCode::Pop:
+		{
+			Byte reg = 0;
+			File.Read(&reg, 1);
+			i++;
+			Output.Println(STR("pop {s}"), Registers[reg]);
+		}
+		break;
 		default:
-			Output.Println(STR("Invalid Opcode 0x{xb}"), IntCast<Byte>(opcode));
+			Output.Println(STR("Invalid Opcode 0x{xb:0}"), IntCast<Byte>(opcode));
 			break;
 		}
 	}
 }
 
 bool Dis(StreamOutput& Output, Str FilePath) {
-	io::File file = io::File::Open(FilePath, io::FileRead | io::FileBinary);
+	io::File file = io::File::Open(FilePath);
 	if (file.Err != io::Success) {
 		return false;
 	}
@@ -827,29 +842,88 @@ bool Dis(StreamOutput& Output, Str FilePath) {
 	if (file.Size() != header.CheckSize)
 		return false;
 	
-	Output.Println(STR(".attribs 0x{xw}"), header.Attributes);
+	Output.Println(STR(".type 0x{xw}"), header.FileType);
 	Output.Println(STR(".version {w}.{w}"), header.MajorVersion, header.MinorVersion);
-	Output.Println(STR(".functions {d}"), header.CountOfFunctions);
-	Output.Println(STR(".objects {d}"), header.CountOfObjects);
-	Output.Println(STR(".globals {d}"), header.CountOfGlobals);
-	Output.Println(STR(".imports {d}"), header.CountOfImports);
-	Output.Println(STR(".exports {d}"), header.CountOfExports);
-	Output.Println(STR(".strings {d}"), header.CountOfExports);
+	Output.Println(STR(".functions {" FUNCTION_PREFIX "}"), header.NumberOfFunctions);
+	Output.Println(STR(".objects {d}"), header.NumberOfStructs);
+	Output.Println(STR(".globals {" GLOBAL_PREFIX "}"), header.NumberOfGlobals);
+	Output.Println(STR(".strings {" STRING_PREFIX "}"), header.NumberOfStrings);
 	Output.Println(STR(".start {" FUNCTION_PREFIX "}\n"), header.EntryPoint);
 
-	for (Uint32 i = 0; i < header.CountOfFunctions; i++) {
+	for (codefile::FunctionType i = 0; i < header.NumberOfFunctions; i++) {
 		codefile::FunctionHeader fn = {};
 		file.Read(Cast<Byte*>(&fn), sizeof(codefile::FunctionHeader));
 
 		Output.Println(STR(".function {" FUNCTION_PREFIX "}:"), i);
-		Output.Println(STR("\t.attribs {d}"), fn.Attributes);
-		Output.Println(STR("\t.args {d}"), fn.Arguments);
-		Output.Println(STR("\t.locals {d}"), fn.LocalCount);
-		Output.Println(STR("\t.size {d}"), fn.SizeOfCode);
-		Output.Println(STR("\t.code"));
+		Output.Println(STR("\t.attribs {w}"), fn.Attributes);
+		if (fn.Attributes & codefile::FunctionNative) {
+			Output.Println(STR("\t.entry {w}"), fn.EIndex);
+			Output.Println(STR("\t.library {w}"), fn.LIndex);
+		}
+		else {
+			Output.Println(STR("\t.args {w}"), fn.NonNative.Arguments);
+			Output.Println(STR("\t.locals {w}"), fn.NonNative.LocalCount);
+			Output.Println(STR("\t.size {w}"), fn.SizeOfCode);
+			Output.Println(STR("\t.code"));
+		}
 
 		DisCode(Output, file, fn.SizeOfCode);
 		Output.WriteArray({ '\n' });
+	}
+
+	for (codefile::GlobalType i = 0; i < header.NumberOfGlobals; i++) {
+		codefile::GlobalHeader global = {};
+		file.Read(Cast<Byte*>(&global), sizeof(codefile::GlobalHeader));
+
+		Output.Print(STR(".global {" GLOBAL_PREFIX "}: "), i);
+		if (global.Primitive == codefile::PrimitiveByte) {
+			Byte b = 0;
+			file.Read(&b, 1);
+			Output.Println(STR("byte #0x{xb:0}"), b);
+		}
+		else if (global.Primitive == codefile::PrimitiveInt) {
+			UInt c = 0;
+			file.Read(Cast<Byte*>(&c), 8);
+			Output.Println(STR("int #0x{X:0}"), c);
+		}
+		else if (global.Primitive == codefile::PrimitiveUInt) {
+			UInt c = 0;
+			file.Read(Cast<Byte*>(&c), 8);
+			Output.Println(STR("uint #0x{X:0}"), c);
+		}
+		else if (global.Primitive == codefile::PrimitiveFloat) {
+			UInt c = 0;
+			file.Read(Cast<Byte*>(&c), 8);
+			Output.Println(STR("float #0x{X:0}"), c);
+		}
+	}
+	
+	Output.WriteArray({ '\n' });
+
+	for (codefile::StringType i = 0; i < header.NumberOfStrings; i++) {
+		UInt16 len = 0;
+		file.Read(Cast<Byte*>(&len), 2);
+		Char* str = (Char*)alloca(len);
+		file.Read(Cast<Byte*>(str), len);
+		str[len - 1] = 0;
+
+		Output.Print(STR(".str {w}: \""), i);
+		for (UInt16 ci = 0; ci < len; ci++) {
+			switch (str[ci]) {
+			case '\0':
+				Output.WriteArray({ '\\', '0' }); break;
+			case '\n':
+				Output.WriteArray({ '\\', 'n' }); break;
+			case '\r':
+				Output.WriteArray({ '\\', 'r' }); break;
+			case '\t':
+				Output.WriteArray({ '\\', 't' }); break;
+			default:
+				Output.WriteArray({ str[ci] });
+				break;
+			}
+		}
+		Output.Println(STR("\""));
 	}
 
 	file.Close();

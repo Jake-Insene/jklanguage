@@ -3,8 +3,7 @@
 #include "jkc/AST/Expresion.h"
 #include "jkc/AST/Type.h"
 #include "jkc/AST/Enums.h"
-#include "jkr/Lib/List.h"
-#include "jkr/Mem/Ptr.h"
+#include "stdjk/Mem/Ptr.h"
 
 #include <string>
 
@@ -15,7 +14,7 @@ struct Statement;
 struct Constant : Expresion {
     union {
         Int64 Signed = 0;
-        Uint64 Unsigned;
+        UInt64 Unsigned;
         Float64 Real;
     };
     std::u8string String;

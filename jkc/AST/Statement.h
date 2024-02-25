@@ -1,5 +1,6 @@
 #pragma once
 #include "jkc/Lexer/Token.h"
+#include "stdjk/List.h"
 
 namespace AST {
 
@@ -24,19 +25,13 @@ enum class StatementType {
     ExpresionStatement,
 };
 
-enum StatementAttributes {
-    AttributeNone,
-    AttributeIntrinsec,
-    AttributeInternal,
-    AttributeNative,
-};
-
 struct Statement {
 
-    static constexpr Statement New(StatementType Type, const SourceLocation& Location) {
+    static Statement New(StatementType Type, const SourceLocation& Location, List<Attribute> Attribs = {}) {
         return Statement{
             .Type = Type,
             .Location = Location,
+            .Attribs = Attribs,
         };
     }
 
@@ -44,6 +39,7 @@ struct Statement {
 
     StatementType Type;
     SourceLocation Location;
+    List<Attribute> Attribs;
 };
 
 }

@@ -1,5 +1,5 @@
 #pragma once
-#include "jkr/CoreHeader.h"
+#include "stdjk/CoreHeader.h"
 
 namespace runtime {
 
@@ -13,11 +13,6 @@ struct [[nodiscard]] Value {
         Address Ptr;
         Object* Obj;
     };
-
-    static constexpr Value New() { return {.Unsigned = 0}; }
-
-    constexpr void Destroy(this Value& /*Self*/) {}
-
 };
 
 }

@@ -1,5 +1,5 @@
 #pragma once
-#include "jkr/CoreHeader.h"
+#include "stdjk/CoreHeader.h"
 
 #include <string>
 
@@ -37,14 +37,15 @@ public:
     }
 
     [[nodiscard]] constexpr bool Is(Type PrimitiveType) const { return Primitive == PrimitiveType; }
-    [[nodiscard]] constexpr bool IsAny() const { return Is(Type::Any) && Flags == 0; }
+    [[nodiscard]] constexpr bool IsUnknown() const { return Is(Type::Unknown) && Flags == 0; }
     [[nodiscard]] constexpr bool IsVoid() const { return Is(Type::Void) && Flags == 0; }
+    [[nodiscard]] constexpr bool IsAny() const { return Is(Type::Any) && Flags == 0; }
     [[nodiscard]] constexpr bool IsByte() const { return Is(Type::Byte) && Flags == 0; }
     [[nodiscard]] constexpr bool IsInt() const { return Is(Type::Int) && Flags == 0; }
     [[nodiscard]] constexpr bool IsUInt() const { return Is(Type::UInt) && Flags == 0; }
     [[nodiscard]] constexpr bool IsFloat() const { return Is(Type::Float) && Flags == 0; }
     [[nodiscard]] constexpr bool IsConstString() const { 
-        return Is(Type::Byte) && (HasPtr() || HasArray()) && PointerDeep < 2; 
+        return Is(Type::Byte) && HasConst() && (HasPtr() || HasArray()) && PointerDeep < 2;
     }
     [[nodiscard]] constexpr bool IsArray() const { return !Is(Type::Unknown) && Flags & (Array); }
 
@@ -56,8 +57,19 @@ public:
     [[nodiscard]] constexpr bool IsNumeric() const { return IsByte() || IsInt() || IsUInt() || IsFloat(); }
 
     [[nodiscard]] constexpr bool operator==(const TypeDecl& RHS) const {
+        if (IsConstString() && RHS.IsConstString()) return true;
+
+        UInt8 flags = Flags;
+        if (flags & Const) {
+            flags &= 0b11111110;
+        }
+
+        UInt8 rFlags = Flags;
+        if (rFlags & Const) {
+            rFlags &= 0b11111110;
+        }
         return Primitive == RHS.Primitive
-            && Flags == RHS.Flags
+            && flags == rFlags
             && PointerDeep == RHS.PointerDeep
             && ArrayLen == RHS.ArrayLen;
     }
@@ -73,7 +85,7 @@ public:
         }
 
         if (Flags & Ptr) {
-            for (Uint8 i = 0; i < PointerDeep; i++)
+            for (UInt8 i = 0; i < PointerDeep; i++)
                 str += "*";
         }
 
@@ -109,10 +121,10 @@ public:
     }
 
     Type Primitive = Type::Unknown;
-    Uint8 Flags = None;
-    Uint8 PointerDeep = 0;
-    Uint32 ArrayLen = 0;
-    Uint32 SizeInBits = 0;
+    UInt8 Flags = None;
+    UInt8 PointerDeep = 0;
+    UInt32 ArrayLen = 0;
+    UInt32 SizeInBits = 0;
 };
 
 }

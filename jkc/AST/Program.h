@@ -1,17 +1,14 @@
 #pragma once
 #include "jkc/AST/Expresion.h"
 #include "jkc/AST/Statement.h"
-#include "jkr/Lib/List.h"
-#include "jkr/Mem/Ptr.h"
+#include "stdjk/Mem/Ptr.h"
 
-#include <vector>
-#include <memory>
 #include <string>
 
 namespace AST {
 
 struct Program {
-    static constexpr Program New(Str Name = STR("")) {
+    static constexpr Program New(std::u8string Name = STR("")) {
         return Program{
             .Name = Name,
             .Statements = List<mem::Ptr<AST::Statement>>::New(0),
@@ -19,10 +16,11 @@ struct Program {
     }
 
     constexpr void Destroy(this Program& Self) { 
+        Self.Name.~basic_string();
         Self.Statements.Destroy();
     }
 
-    Str Name;
+    std::u8string Name;
     List<mem::Ptr<AST::Statement>> Statements;
 };
 

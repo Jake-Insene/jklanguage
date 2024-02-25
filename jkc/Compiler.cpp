@@ -5,18 +5,24 @@
 
 #include <fstream>
 
-static inline std::vector<Char> ReadFileContent(StreamOutput &ErrorStream, Str FileName) {
-    io::File file = io::File::Open(FileName, io::FileRead | io::FileBinary);
+static inline List<Char> ReadFileContent(StreamOutput &ErrorStream, Str FileName, bool& Success) {
+    io::File file = io::File::Open(FileName);
     if (file.Err != io::FileError::Success)
     {
         ErrorStream.Println(STR("Error: can't open the file '{s}'"), FileName);
-        return {};
+        Success = false;
+        return List<Char>{
+            .Capacity = 0,
+            .Size = 0,
+            .Data = nullptr,
+        };
     }
 
     size_t size = (size_t)(1 + file.Size());
-    std::vector<Char> content{};
-    content.resize(size);
-    file.Read((Byte*)content.data(), size);
+    List<Char> content{};
+    content.GrowCapacity(size);
+    file.Read((Byte*)content.Data, size);
+    content.Size = size;
     content[size - 1] = '\0';
 
     file.Close();
@@ -24,33 +30,39 @@ static inline std::vector<Char> ReadFileContent(StreamOutput &ErrorStream, Str F
     return content;
 }
 
+Compiler Compiler::New(StreamOutput& ErrorStream, const ProfileData& PD) {
+    return Compiler{
+        .ErrorStream = ErrorStream,
+        .Emitter = CodeGen::Emitter(ErrorStream),
+        .PD = PD,
+        .SourceParser = Parser::New(ErrorStream),
+    };
+}
+
 CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName, CodeGen::EmitOptions Options) {
-    std::vector<Char> content = ReadFileContent(Self.ErrorStream, FileName);
-    if (content.size() == 0)
+    bool success = true;
+    List<Char> content = ReadFileContent(Self.ErrorStream, FileName, success);
+    if (!success)
         return CompileResult(false);
 
-    Slice<Char> fileContent = Slice<Char>(content.data(), content.size());
-
     // Parsing
-    CompileResult result{};
+    Slice<Char> fileContent = Slice<Char>(content.Data, content.Size);
+    
     Self.BeginAction(FileName, ActionType::Parsing, false);
     AST::Program program = Self.SourceParser.ParseContent(FileName, fileContent);
-    if (!Self.SourceParser.Success()) {
-        result.Success = false;
-        return result;
-    }
+    content.Destroy();
     Self.EndAction(FileName, ActionType::Parsing, !Self.SourceParser.Success());
 
-    Self.PreParse();
-    AST::InsertPrograms(program, Self.PreParsedPrograms);
-    Self.PreParsedPrograms.Clear();
+    if (!Self.SourceParser.Success()) {
+        return CompileResult(false);
+    }
 
     std::u8string outputFile = std::u8string(FileName);
     outputFile = outputFile.substr(0, outputFile.find_last_of('.'));
     outputFile += STR(".jk");
 
     // CodeGen
-    io::File file = io::File::Open(outputFile.c_str(), io::FileWrite | io::FileBinary);
+    io::File file = io::File::Create(outputFile.c_str());
 
     Self.BeginAction(FileName, ActionType::CodeGen, false);
     Self.Emitter.Emit(
@@ -59,15 +71,16 @@ CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName, Cod
         Options,
         file
     );
+    Self.EndAction(FileName, ActionType::CodeGen, !Self.Emitter.Success);
+
     program.Destroy();
     if (!Self.Emitter.Success) {
-        result.Success = false;
+        return CompileResult(false);
     }
-    Self.EndAction(FileName, ActionType::CodeGen, false);
 
     file.Close();
 
-    return result;
+    return CompileResult(true);
 }
 
 CompileResult Compiler::Disassembly(this Compiler& Self, Str FileName, StreamOutput& Output) {
@@ -84,41 +97,6 @@ CompileResult Compiler::Disassembly(this Compiler& Self, Str FileName, StreamOut
     };
 }
 
-Str BuiltinFiles[] = {
-#ifdef _WIN32
-    STR("std/builtin/windows.jkl"),
-#else
-    STR("std/builtin/linux.jkl"),
-#endif // _WIN32
-};
-
-void Compiler::PreParse(this Compiler& Self) {
-    Self.PreParseSuccess = true;
-
-    for (auto &file : BuiltinFiles)
-    {
-        std::vector<Char> content = ReadFileContent(Self.ErrorStream, file);
-        if (content.size() == 0)
-        {
-            Self.ErrorStream.Println(STR("Error: can't open the file '{s}'"), file);
-            return;
-        }
-
-        Slice<Char> fileContent{content.data(), content.size()};
-
-        Self.PreParsedPrograms.Push() = Self.SourceParser.ParseContent(file, fileContent);
-        if (!Self.SourceParser.Success())
-        {
-            Self.PreParseSuccess = false;
-            break;
-        }
-    }
-
-    if (!Self.PreParseSuccess)
-        Self.ErrorStream.Println(STR("Error: Error parsing builtin files"));
-}
-
 void Compiler::Destroy(this Compiler& Self) {
-    Self.PreParsedPrograms.Destroy();
     Self.SourceParser.Destroy();
 }

@@ -1,12 +1,10 @@
 #include <jkc/Compiler.h>
-#include <jkr/Runtime/VirtualMachine.h>
-#include <jkr/Lib/Error.h>
-
-#include <iostream>
+#include <jkr/NI/NI.h>
+#include <stdjk/Error.h>
 #include <chrono>
 
 std::chrono::high_resolution_clock::time_point start;
-std::chrono::high_resolution_clock::time_point end;
+std::chrono::high_resolution_clock::time_point  end;
 
 static inline void PrintDuration() {
     Str sufix = STR("ns");
@@ -55,54 +53,82 @@ static inline void EndAction(Str /*FileName*/, ActionType Type, bool Error) {
 }
 
 int main() {
+    ProfileData pd = {
+        .BeginAction = BeginAction,
+        .EndAction = EndAction,
+    };
 
-    {
-        ProfileData pd = {
-            .BeginAction = BeginAction,
-            .EndAction = EndAction,
-        };
+    io::File err = io::GetStdout();
+    Compiler compiler = Compiler::New(err, pd);
 
-        io::File err = io::GetStderr();
-        Compiler compiler = Compiler::New(err, pd);
+    CodeGen::EmitOptions options = {
+        .Debug = CodeGen::DBG_NORMAL,
+        .OptimizationLevel = CodeGen::OPTIMIZATION_RELEASE_FAST,
+    };
 
-        CodeGen::EmitOptions options = {
-            .Debug = CodeGen::DBG_NORMAL,
-            .OptimizationLevel = CodeGen::OPTIMIZATION_NONE,
-        };
-
-        if (!compiler.CompileFromSource(STR("Examples/main.jkl"), options).Success) {
-            io::Println(STR("Compilation fail"));
-            error::Exit(UInt(-1));
-        }
-
-        io::File output = io::File::Open(STR("Examples/main.jks"), io::FileBinary | io::FileWrite);
-
-        if (!compiler.Disassembly(STR("Examples/main.jk"), output).Success) {
-            io::Println(STR("Disassembly fail"));
-            error::Exit(UInt(-1));
-        }
-
-        compiler.Destroy();
-        output.Close();
+    if (!compiler.CompileFromSource(STR("Examples/main.jkl"), options).Success) {
+        io::Println(STR("Compilation fail"));
+        error::Exit(UInt(-1));
     }
 
-    {
-        runtime::Assembly as = runtime::Assembly::FromFile(STR("Examples/main.jk"));
-        runtime::VirtualMachine vm = runtime::VirtualMachine::New(1024 * 1024, as);
-
-        start = std::chrono::high_resolution_clock::now();
-        UInt exitCode = vm.ExecMain().Unsigned;
-        end = std::chrono::high_resolution_clock::now();
-
-        io::Print(STR("[Exectuion tooks "));
-        PrintDuration();
-        io::Println(STR("]"));
-
-        io::Println(STR("Program exit with code {u}"), exitCode);
-
-        vm.Destroy();
-        as.Destroy();
+    io::File output = io::File::Create(STR("Examples/main.jks"));
+    if (output.Err != io::Success) {
+        io::Println(STR("Disassembly fail"));
+        error::Exit(UInt(-1));
     }
+
+    if (!compiler.Disassembly(STR("Examples/main.jk"), output).Success) {
+        io::Println(STR("Disassembly fail"));
+        error::Exit(UInt(-1));
+    }
+
+    compiler.Destroy();
+    output.Close();
+
+    JKResult result = JK_OK;
+    JKAssembly as;
+    result = jkrLoadAssembly(
+        JKString(STR("Examples/main.jk")),
+        &as
+    );
+
+    if (result != JK_OK) {
+        io::Println(STR("Error loading the file"));
+        error::Exit(UInt(-1));
+    }
+
+    JKVirtualMachine vm;
+    result = jkrCreateVM(
+        &vm,
+        static_cast<USize>(1024) * 1024
+    );
+    jkrVMSetAssembly(vm, as);
+
+    start = std::chrono::high_resolution_clock::now();
+    JKValue exitValue;
+    result = jkrVMExecuteMain(vm, &exitValue);
+    end = std::chrono::high_resolution_clock::now();
+    if (result != JK_OK) {
+        if (result == JK_VM_LINKAGE_ERROR) {
+            io::Println(STR("VM: Linkage error"));
+        }
+        else if (result == JK_VM_STACK_OVERFLOW) {
+            io::Println(STR("VM: Stack overflow"));
+        }
+        else {
+            io::Println(STR("VM Error"));
+        }
+        error::Exit(UInt(-1));
+    }
+
+    io::Print(STR("[Exectuion tooks "));
+    PrintDuration();
+    io::Println(STR("]"));
+
+    io::Println(STR("Program exit with code {i}"), exitValue.U);
+
+    jkrDestroyVM(vm);
+    jkrUnloadAssembly(as);
 
     return 0;
 }

@@ -1,7 +1,7 @@
 #include "jkc/Lexer/Lexer.h"
 
 struct IdentifierInfo {
-    Uint32 Len;
+    UInt32 Len;
     const char* Str;
     TokenType Type;
 };
@@ -19,17 +19,17 @@ static IdentifierInfo Identifiers[] = {
         {.Len = 3, .Str = "for", .Type = TokenType::For },
         {.Len = 5, .Str = "while", .Type = TokenType::While },
 
-        {.Len = 3, .Str = "any", .Type = TokenType::TypeAny },
-        {.Len = 4, .Str = "void", .Type = TokenType::TypeVoid },
-        {.Len = 4, .Str = "byte", .Type = TokenType::TypeByte },
-        {.Len = 4, .Str = "bool", .Type = TokenType::TypeByte },
-        {.Len = 3, .Str = "int", .Type = TokenType::TypeInt },
-        {.Len = 4, .Str = "uint", .Type = TokenType::TypeUInt },
-        {.Len = 5, .Str = "float", .Type = TokenType::TypeFloat },
+        {.Len = 3, .Str = "Any", .Type = TokenType::TypeAny },
+        {.Len = 4, .Str = "Void", .Type = TokenType::TypeVoid },
+        {.Len = 4, .Str = "Byte", .Type = TokenType::TypeByte },
+        {.Len = 4, .Str = "Bool", .Type = TokenType::TypeByte },
+        {.Len = 3, .Str = "Int", .Type = TokenType::TypeInt },
+        {.Len = 4, .Str = "UInt", .Type = TokenType::TypeUInt },
+        {.Len = 5, .Str = "Float", .Type = TokenType::TypeFloat },
 };
 
 static inline void FindIdentifier(Token& Tk) {
-    for (Uint32 i = 0; i < std::size(Identifiers); i++) {
+    for (UInt32 i = 0; i < std::size(Identifiers); i++) {
         if (Identifiers[i].Len != Tk.Value.Str.size())
             continue;
 
@@ -42,43 +42,43 @@ static inline void FindIdentifier(Token& Tk) {
     Tk.Type = TokenType::Identifier;
 }
 
-Token Lexer::GetIdentifier() {
+Token Lexer::GetIdentifier(this Lexer& Self) {
     Token tk{};
     tk.Type = TokenType::Unknown;
-    tk.Location = SourceLocation(FileName, Line);
+    tk.Location = SourceLocation(Self.FileName, Self.Line);
 
     tk.Value.Str = {};
-    while (isalnum(Current) || Current == '_') {
-        tk.Value.Str.push_back(Current);
-        Advance();
+    while (isalnum(Self.Current) || Self.Current == '_') {
+        tk.Value.Str.push_back(Self.Current);
+        Self.Advance();
     }
 
     FindIdentifier(tk);
     return tk;
 }
 
-Token Lexer::GetDigit() {
+Token Lexer::GetDigit(this Lexer& Self) {
     Token tk{};
     tk.Type = TokenType::ConstInteger;
-    tk.Location = SourceLocation(FileName, Line);
+    tk.Location = SourceLocation(Self.FileName, Self.Line);
     Int32 base = 10;
 
     std::string digit{};
 loop:
-    while (isdigit(Current)) {
-        digit.push_back(Current);
-        Advance();
+    while (isdigit(Self.Current)) {
+        digit.push_back(Self.Current);
+        Self.Advance();
     }
 
-    if (Current == '.') {
+    if (Self.Current == '.') {
         tk.Type = TokenType::ConstFloat;
-        Advance();
+        Self.Advance();
         digit.push_back('.');
         goto loop;
     }
-    else if (Current == 'U') {
+    else if (Self.Current == 'U') {
         tk.Type = TokenType::ConstUInteger;
-        Advance();
+        Self.Advance();
     }
 
     if (tk.Type == TokenType::ConstFloat)
@@ -90,22 +90,49 @@ loop:
     return tk;
 }
 
-Token Lexer::GetString() {
+Token Lexer::GetString(this Lexer& Self) {
     Token tk{};
     tk.Type = TokenType::ConstString;
-    tk.Location = SourceLocation(FileName, Line);
+    tk.Location = SourceLocation(Self.FileName, Self.Line);
 
-    Advance();
+    Self.Advance();
 
     tk.Value.Str = {};
-    while (Current != '\"' && Current != '\0') {
-        tk.Value.Str.push_back(Current);
-        Advance();
+    while (Self.Current != '\"' && Self.Current != '\0') {
+        if (!Self.ParseScapeSequence(tk.Value.Str)) {
+            tk.Value.Str.push_back(Self.Current);
+            Self.Advance();
+        }
     }
 
-    Advance();
+    if (Self.Current == '\0') {
+        Self.ErrorStream.Println(STR("{s}:{u}: Error: Bad string"), Self.FileName, Self.Line);
+        Self.IsPanicMode = true;
+    }
+
+    Self.Advance();
 
     return tk;
+}
+
+bool Lexer::ParseScapeSequence(this Lexer& Self, std::u8string& Str) {
+    if (Self.Current == '\\') {
+        Self.Advance();
+        switch (Self.Current) {
+        case '0': Str.push_back('\0'); break;
+        case 'n': Str.push_back('\n'); break;
+        case 'r': Str.push_back('\r'); break;
+        case 't': Str.push_back('\t'); break;
+        default:
+            Self.ErrorStream.Println(STR("{s}:{u}: Warn: Unknown scape sequence"), Self.FileName, Self.Line);
+            break;
+        }
+
+        Self.Advance();
+        return true;
+    }
+
+    return false;
 }
 
 Token Lexer::GetNext(this Lexer& Self) {
@@ -206,6 +233,11 @@ start:
         tk = Self.GetString();
         break;
     case '\'':
+        break;
+    case '#':
+        Self.Advance(); // Skip # and get the id
+        tk = Self.GetIdentifier();
+        tk.Type = TokenType::CompilerAttribute;
         break;
     case '\0':
         Self.MakeSimple(TokenType::EndOfFile, tk);

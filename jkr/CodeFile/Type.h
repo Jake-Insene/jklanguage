@@ -1,28 +1,35 @@
 #pragma once
-#include "jkr/CoreHeader.h"
+#include "stdjk/CoreHeader.h"
 
 namespace codefile {
 
-enum class TypePrimitive : Byte {
-    Byte,
-    Int,
-    UInt,
-    Float,
-    StringRef,
+enum TypePrimitive : Byte {
+    PrimitiveByte,
 
-    Object,
-    Any,
+    PrimitiveInt,
+    PrimitiveIntC8,
+    PrimitiveIntC16,
+    PrimitiveIntC32,
+
+    PrimitiveUInt,
+    PrimitiveUIntC8,
+    PrimitiveUIntC16,
+    PrimitiveUIntC32,
+    
+    PrimitiveFloat,
+    PrimitiveFloatC32,
+    
+    PrimitiveStringRef,
+    
+    PrimitiveObject,
+    
+    PrimitiveAny,
 };
 
 enum TypeAttributes : Byte {
     TypeNone = 0,
     TypeArray = 0x01,
     TypePointer = 0x02,
-};
-
-struct Type {
-    TypePrimitive Primitive : 4;
-    TypeAttributes Attributes : 4;
 };
 
 }

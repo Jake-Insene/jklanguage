@@ -71,13 +71,14 @@ struct Lexer {
         Self.Advance();
     }
 
-    constexpr Char GetOffset(this Lexer& Self, Uint32 Off) {
+    constexpr Char GetOffset(this Lexer& Self, UInt32 Off) {
         return Self.Index + Off < Self.Content.Len ? Self.Content[Self.Index + Off] : '\0';
     }
 
-    Token GetIdentifier();
-    Token GetDigit();
-    Token GetString();
+    Token GetIdentifier(this Lexer& Self);
+    Token GetDigit(this Lexer& Self);
+    Token GetString(this Lexer& Self);
+    bool ParseScapeSequence(this Lexer& Self, std::u8string& Str);
 
     Str FileName;
     StreamOutput& ErrorStream;

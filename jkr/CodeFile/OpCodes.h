@@ -7,16 +7,17 @@
 // A total of 16 registers
 
 #define LOCAL_PREFIX "b"
-#define GLOBAL_PREFIX "d"
+#define GLOBAL_PREFIX "w"
 #define FUNCTION_PREFIX "d"
+#define STRING_PREFIX "w"
 #define ADDRESS_PREFIX "w"
 #define FIELD_PREFIX "b"
 
 namespace codefile {
 
 constexpr auto MaxLocals = 0xFF;
-constexpr auto MaxGlobals = 0xFFFF'FFFF;
-constexpr auto MaxStrings = 0xFFFF'FFFF;
+constexpr auto MaxGlobals = 0xFFFF;
+constexpr auto MaxStrings = 0xFFFF;
 constexpr auto MaxFields = 0xFF;
 
 enum Register : Byte {
@@ -84,36 +85,54 @@ PACK(struct FIL {
 enum class OpCode {
     Brk = 0,
 
-    // MIL
+    // Dest register [4 bits]
+    // Src register [4 bits]
     Mov,
     // Dest register [4 bits]
     // if (OpCode == Const4)
     //      Constant [4 bits]
     // else
     //      Constant [... bits]
-    Const4,
-    Const8,
-    Const16,
-    Const32,
-    Const64,
+    Mov4,
+    // Extra bits layout
+    //                     4 Extend left
+    //                     5 Extend right
+    //                     6 Sign extent
+    //                     7 [Zero]
+    Mov8,
+    Mov16,
+    Mov32,
+    // Don't use extra bits layout
+    Mov64,
 
     // Move the result of a previus call to the
     // specified register
-    // Dest register [4 bits]-[4 bits]
+    // Dest register [4 bits]
+    // Unused bits [4 bits]
     MovRes,
 
-    // LIL4
+    // SrcDest register [4 bits]
+    // Constant [4 bits]
     LocalSet4,
     LocalGet4,
-    // LIL
+    // SrcDest register [4 bits]
+    // Unused bits [4 bits]
+    // Local index [LocalType]
     LocalSet,
     LocalGet,
-    // GIL
+    // SrcDest register [4 bits]
+    // Zero filled [4 bits]
+    // Global index [GlobalType]
     GlobalSet,
     GlobalGet,
 
     // --- Math ---
-    // // Src/Dest register [4 bits]-[4 bits]
+    // // Src/Dest register [4 bits]
+    //                       4-5 Incrementation type
+    //                              Unsigned 00
+    //                              Signed 01
+    //                              Floating 10
+    // Zero filled [4 bits]
     Inc,
     IInc,
     FInc,
@@ -124,6 +143,7 @@ enum class OpCode {
     // Dest register [4 bits]
     // First operand register [4 bits]
     // Second operand register [4 bits]
+    // Zero filled [4 bits]
     Add,
     IAdd,
     FAdd,
@@ -139,7 +159,7 @@ enum class OpCode {
 
     // Dest register [4 bits]
     // First operand register [4 bits]
-    // Constant [16 bits]
+    // Constant [8 bits]
     Add8,
     IAdd8,
     Sub8,
@@ -162,7 +182,8 @@ enum class OpCode {
     IDiv16,
 
     // --- Flow Control ---
-    // MIL
+    // First operand register [4 bits]
+    // Second operand register [4 bits]
     Cmp,
     ICmp,
     FCmp,
@@ -189,14 +210,15 @@ enum class OpCode {
     Jge8,
 
     // Perfome a call
-    // Function Index [FunctionType]
-    Call,
     // Function Index [8 bits]
     Call8,
+    // Function Index [FunctionType]
+    Call,
 
-    // Used in void functions or in functions with register call conv
+    // Used in void functions or in functions with register based call conv
     RetVoid,
-    // Src register [4 bits]-[4 bits]
+    // Src register [4 bits]
+    // Zero filled [4 bits]
     Ret,
     // Constant [8 bits]
     Ret8,
@@ -208,26 +230,35 @@ enum class OpCode {
     RetGlobal,
 
     // --- Objects ---
-    
+
     // Create a object of the given type
-    // Dest object register [4 bits]-[4 bits]
+    // Dest object register [4 bits]
+    // Zero filled [4 bits]
     // Object Index [ObjectType]
     NewObject,
 
-    // Src object register [4 bits]-[4 bits]
+    // Src object register [4 bits]
+    // Zero filled [4 bits]
     DestroyObject,
 
-    // FIL
+    // SrcDest field register [4 bits]
+    // Field index [4 bits]
+    FieldSet4,
+    FieldGet4,
+    // SrcDest field register [4 bits]
+    // Zero filled [4 bits]
+    // Field index [FieldType]
     FieldSet,
     FieldGet,
 
     // --- Array ---
-
-    // Dest array register [4 bits]-[4 bits]
+    // Dest array register [4 bits]
+    // Zero filled [4 bits]
     // Type [Type]
     NewArray,
 
-    // Dest array register [4 bits]-[4 bits]
+    // Dest array register [4 bits]
+    // Zero filled [4 bits]
     // Object Index [ObjectType]
     NewArrayObject,
 
@@ -236,35 +267,29 @@ enum class OpCode {
     ArrayLen,
 
     // Dest/Src register [4 bits]
+    // Index array register [4 bits]
     // Src array register [4 bits]
     ArraySet,
     ArrayGet,
 
     // Src array register [4 bits]
+    // Zero filled [4 bits]
     DestroyArray,
 
     // --- String ---
-    // SIL
+    // Dest register [4 bits]
+    // String index [4 bits]
+    StringGet4,
+    // Dest string register [4 bits]
+    // Zero filled [4 bits]
+    // String index [StringType]
     StringGet,
 
-    MemoryPrefix = 0xFA,
-    StackPrefix = 0xFB,
-    Prefix3 = 0xFC,
-    Prefix4 = 0xFD,
-    Prefix5 = 0xFE,
-    Prefix6 = 0xFF,
-};
-
-enum class OpCodeMemory {
-    // Store the result on the rmem register
-    // 32 bits buffer size [32 bits]
-    Allocate,
-    // Deallocate the buffer on the rmem register
-    Deallocate,
-};
-
-enum class OpCodeStack {
-    // Src register [4 bits]-[4 bits]
+    // Src register [4 bits]
+    //              4 Duplicate
+    //              5 PopBefore
+    //              6 Unused(Must be zero)
+    //              7 Unused(Must be zero)
     Push,
     // Src local [LocalType]
     LocalPush,
@@ -276,11 +301,19 @@ enum class OpCodeStack {
     Push16,
     Push32,
     Push64,
-    
+
+    // Discarp the top of the stack
     PopTop,
 
-    // Dest register [4 bits]-[4 bits]
+    // Dest register [4 bits]
+    //                4 Double pop
+    //                5 Unused(Must be zero)
+    //                6 Unused(Must be zero)
+    //                7 Unused(Must be zero)
     Pop,
+
+    // Performe a simd instruction
+    SimdPrefix = 0xFA,
 };
 
 }

@@ -1,8 +1,6 @@
 #pragma once
-#include "jkr/CoreHeader.h"
-
-#include <initializer_list>
-#include <assert.h>
+#include "stdjk/CoreHeader.h"
+#include "stdjk/Error.h"
 
 template<typename T>
 struct Slice {
@@ -10,12 +8,8 @@ struct Slice {
         : Data(nullptr), Len(0)
     {}
 
-    constexpr Slice(const T* _Data, Uint64 Len) noexcept :
+    constexpr Slice(const T* _Data, UInt64 Len) noexcept :
         Data(_Data), Len(Len)
-    {}
-
-    constexpr Slice(const std::initializer_list<T>& Args) noexcept :
-        Data(Args.begin()), Len(Args.end() - Args.begin())
     {}
 
     constexpr Slice(const Slice& RHS) noexcept :
@@ -46,8 +40,8 @@ struct Slice {
 
     constexpr ~Slice() noexcept {}
 
-    constexpr const T& operator[](Uint64 Index) const noexcept {
-        assert(Index < Len && "Index out of range");
+    constexpr const T& operator[](UInt64 Index) const noexcept {
+        RuntimeError(Index < Len, STR("Index out of range"));
         return Data[Index];
     }
 
@@ -55,5 +49,5 @@ struct Slice {
     constexpr const T* end() const noexcept { return &Data[Len]; }
 
     const T* Data = nullptr;
-    Uint64 Len = 0;
+    UInt64 Len = 0;
 };

@@ -1,4 +1,0 @@
-
-#intrinsec
-fn copy(dest: any, src: any, size: usize) void;
-

@@ -5,6 +5,8 @@
 namespace AST {
 
 void Expresion::Destroy(this Expresion& Self) {
+    Self.Attribs.Destroy();
+
     if (Self.Type == ExpresionType::Constant) {
         Constant* c = Cast<Constant*>(&Self);
         c->String.~basic_string();

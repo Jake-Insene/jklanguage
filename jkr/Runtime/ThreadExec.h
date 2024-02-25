@@ -1,23 +1,23 @@
 #pragma once
 #include "jkr/Runtime/Stack.h"
-#include "jkr/Runtime/Assembly.h"
+#include "jkr/Runtime/Function.h"
 #include "jkr/CodeFile/OpCodes.h"
 
 namespace runtime {
 
+struct VirtualMachine;
+
 struct [[nodiscard]] ThreadExecution {
 
-    static ThreadExecution New(USize StackSize, Assembly& Asm);
+    static ThreadExecution New(VirtualMachine* VM);
     
-    Value Exec(this ThreadExecution& Self, unsigned int Index, Value* SP);
+    Value Exec(this ThreadExecution& Self, Function* Fn, Value* SP);
 
-    void ExecCommon(this ThreadExecution& Self, const  Function& Fn, codefile::OpCode C, 
-                    StackFrame& Frame, UInt& IP);
+    Value ProcessCall(this ThreadExecution& Self, StackFrame& Frame, Function* Fn);
 
     void Destroy(this ThreadExecution& Self);
 
-    Stack ThreadStack;
-    Assembly& Asm;
+    VirtualMachine* VM;
 };
 
 
