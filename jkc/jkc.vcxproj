@@ -14,7 +14,10 @@
     <ClCompile Include="AST\Expresion.cpp" />
     <ClCompile Include="AST\Statement.cpp" />
     <ClCompile Include="CodeGen\Disassembler.cpp" />
-    <ClCompile Include="CodeGen\Emitter.cpp" />
+    <ClCompile Include="CodeGen\Emitter\EmitExpr.cpp" />
+    <ClCompile Include="CodeGen\Emitter\EmitStat.cpp" />
+    <ClCompile Include="CodeGen\Emitter\Emitter.cpp" />
+    <ClCompile Include="CodeGen\Emitter\PreEmit.cpp" />
     <ClCompile Include="Compiler.cpp" />
     <ClCompile Include="Lexer\Lexer.cpp" />
     <ClCompile Include="Main.cpp" />
@@ -40,7 +43,7 @@
     <ClInclude Include="AST\Utility.h" />
     <ClInclude Include="CodeGen\Assembler.h" />
     <ClInclude Include="CodeGen\Disassembler.h" />
-    <ClInclude Include="CodeGen\Emitter.h" />
+    <ClInclude Include="CodeGen\Emitter\Emitter.h" />
     <ClInclude Include="CodeGen\SymbolTable.h" />
     <ClInclude Include="Compiler.h" />
     <ClInclude Include="Lexer\Lexer.h" />

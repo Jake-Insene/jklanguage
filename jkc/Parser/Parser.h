@@ -2,8 +2,11 @@
 #include "jkc/Lexer/Lexer.h"
 #include "jkc/AST/Program.h"
 #include "jkc/AST/Type.h"
+#include <memory>
 
 struct Parser {
+    std::unique_ptr<int> a;
+
     enum class ParsePrecedence {
         None,
         Assignment,  // =
@@ -97,39 +100,52 @@ struct Parser {
 
             switch (Current.Type) {
             case TokenType::Fn:
+                return;
             case TokenType::Return:
+                if (Context.IsInFn) {
+                    return;
+                }
+                break;
             case TokenType::Var:
                 return;
             default:
-                Advance();
                 break;
             }
+         
+            Advance();
         }
     }
 
     AST::TypeDecl            ParseType();
 
-    mem::Ptr<AST::Expresion> ParseConstantValue(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
-    mem::Ptr<AST::Expresion> ParseIdentifier(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
-    mem::Ptr<AST::Expresion> ParseGroup(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
-    mem::Ptr<AST::Expresion> ParseCall(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion> Left);
-    mem::Ptr<AST::Expresion> ParseDot(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion> Left);
-    mem::Ptr<AST::Expresion> ParseUnary(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
-    mem::Ptr<AST::Expresion> ParseBinaryOp(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion> Left);
-    mem::Ptr<AST::Expresion> ParseArrayList(List<Attribute> Attribs, bool CanAssign, mem::Ptr<AST::Expresion>);
+    AST::Expresion* ParseConstantValue(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
+    AST::Expresion* ParseIdentifier(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
+    AST::Expresion* ParseGroup(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
+    AST::Expresion* ParseCall(List<Attribute> Attribs, bool CanAssign, AST::Expresion* Left);
+    AST::Expresion* ParseDot(List<Attribute> Attribs, bool CanAssign, AST::Expresion* Left);
+    AST::Expresion* ParseUnary(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
+    AST::Expresion* ParseBinaryOp(List<Attribute> Attribs, bool CanAssign, AST::Expresion* Left);
+    AST::Expresion* ParseArrayList(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
+    AST::Expresion* ParseArrayAccess(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
 
-    mem::Ptr<AST::Expresion> ParseExpresion(ParsePrecedence Precedence);
-    mem::Ptr<AST::Block>     ParseBlock(List<Attribute> Attribs);
-    void                     ParseFunctionParameters(mem::Ptr<AST::Function>& Function);
-    mem::Ptr<AST::Statement> ParseFunction(List<Attribute> Attribs);
-    mem::Ptr<AST::Statement> ParseReturn(List<Attribute> Attribs);
-    mem::Ptr<AST::Statement> ParseConstVal(List<Attribute> Attribs);
-    mem::Ptr<AST::Statement> ParseVar(List<Attribute> Attribs);
-    mem::Ptr<AST::Statement> ParseIf(List<Attribute> Attribs);
-    mem::Ptr<AST::Statement> ParseExpresionStatement(List<Attribute> Attribs);
-    mem::Ptr<AST::Statement> ParseStatement();
+    AST::Expresion* ParseExpresion(ParsePrecedence Precedence);
+    AST::Block*     ParseBlock(List<Attribute> Attribs);
+    void                     ParseFunctionParameters(AST::Function* Function);
+    AST::Statement* ParseFunction(List<Attribute> Attribs);
+    AST::Statement* ParseReturn(List<Attribute> Attribs);
+    AST::Statement* ParseConstVal(List<Attribute> Attribs);
+    AST::Statement* ParseVar(List<Attribute> Attribs);
+    AST::If*        ParseIf(List<Attribute> Attribs);
+    AST::Statement* ParseExpresionStatement(List<Attribute> Attribs);
+    AST::Statement* ParseStatement();
 
     List<Attribute> ParseCompilerAttributes();
+
+    struct {
+        bool IsInFn = false;
+        bool IsInReturn = false;
+        UInt8 ReturnCount = 0;
+    } Context;
 
     StreamOutput& ErrorStream;
     

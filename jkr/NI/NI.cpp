@@ -4,7 +4,7 @@
 #include "jkr/Runtime/Assembly.h"
 #include "jkr/Runtime/VirtualMachine.h"
 
-extern "C" JK_API JKResult jkrLoadAssembly(JKString Path, JKAssembly* pAsm) {
+extern "C" JK_API JKResult jkrLoadAssembly(JKString Path, JKAssembly * pAsm) {
     runtime::Assembly* loadedAssembly = runtime::Assembly::FromFile(Cast<Str>(Path));
     if (loadedAssembly->Err != runtime::AsmOk) {
         if (loadedAssembly->Err == runtime::AsmCorruptFile) {
@@ -27,8 +27,8 @@ extern "C" JK_API void jkrUnloadAssembly(JKAssembly Asm) {
     as->Destroy();
 }
 
-extern "C" JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize) {
-    runtime::VirtualMachine* vm = runtime::VirtualMachine::New(StackSize, nullptr);
+extern "C" JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize, JKUInt LocalSize) {
+    runtime::VirtualMachine* vm = runtime::VirtualMachine::New(StackSize, LocalSize, nullptr);
     
     *pVM = vm;
     return JK_OK;
@@ -37,6 +37,18 @@ extern "C" JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize) 
 extern "C" JK_API void jkrVMSetAssembly(JKVirtualMachine VM, JKAssembly Asm) {
     runtime::VirtualMachine* vm = Cast<runtime::VirtualMachine*>(VM);
     vm->Asm = Cast<runtime::Assembly*>(Asm);
+}
+
+JK_API JKResult jkrVMLink(JKVirtualMachine VM) {
+    runtime::VirtualMachine* vm = Cast<runtime::VirtualMachine*>(VM);
+    vm->ResolveExtern();
+    if (vm->Err != runtime::VMSucess) {
+        if (vm->Err == runtime::VMLinkageError) {
+            return JK_VM_LINKAGE_ERROR;
+        }
+    }
+
+    return JK_OK;
 }
 
 extern "C" JK_API JKResult jkrVMExecuteMain(JKVirtualMachine VM, JKValue* ExitValue) {
@@ -64,16 +76,11 @@ extern "C" JK_API JKResult jkrGetField(JKThreadState State, JKObject Object, JKB
     return JKResult();
 }
 
-extern "C" JK_API JKOpaque jkrListGetBytes(JKThreadState State, JKList ListRef) {
-    runtime::BasicList* list = Cast<runtime::BasicList*>(ListRef);
-    if (list->ListType == runtime::ListOfBytes) {
-        runtime::ByteList* bl = Cast<runtime::ByteList*>(list);
-        return bl->Elements.Data;
-    }
-    else if (list->ListType == runtime::ListOfValues) {
-        runtime::ValueList* vl = Cast<runtime::ValueList*>(list);
-        return vl->Elements.Data;
-    }
+extern "C" JK_API JKOpaque jkrArrayBytes(JKThreadState State, JKArray ArrayRef) {
+    runtime::Array* array = Cast<runtime::Array*>(ArrayRef);
+    return array->Items;
+}
 
-    return nullptr;
+extern "C" JK_API JKValue jkrArrayGet(JKThreadState State, JKArray ArrayRef, JKUInt Index) {
+    return JKValue();
 }

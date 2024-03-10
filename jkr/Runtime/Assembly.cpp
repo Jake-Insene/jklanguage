@@ -1,4 +1,5 @@
 #include "jkr/Runtime/Assembly.h"
+#include <jkr/CodeFile/Type.h>
 #include <stdjk/IO/File.h>
 #include <stdjk/Mem/Allocator.h>
 #include <malloc.h>
@@ -30,60 +31,68 @@ Assembly* Assembly::FromFile(Str FilePath) {
         return loadedAssembly;
     }
 
-    UInt32& sig = *(UInt32*)codefile::Signature;
+    UInt64& sig = *(UInt64*)codefile::Signature;
     if (loadedAssembly->Signature != sig) {
         loadedAssembly->Err = AsmCorruptFile;
         file.Close();
         return loadedAssembly;
     }
 
-    if (loadedAssembly->EntryPoint >= loadedAssembly->NumberOfFunctions) {
-        loadedAssembly->Err = AsmBadFile;
-        file.Close();
-        return loadedAssembly;
-    }
+    loadedAssembly->Sections.GrowCapacity(loadedAssembly->NumberOfSections);
+    for (Byte i = 0; i < loadedAssembly->NumberOfSections; i++) {
+        Section& sc = loadedAssembly->Sections.Push();
+        file.Read(Cast<Byte*>(&sc), sizeof(codefile::SectionHeader));
 
-    loadedAssembly->Functions.GrowCapacity(loadedAssembly->NumberOfFunctions);
-    for (codefile::FunctionType i = 0; i < loadedAssembly->NumberOfFunctions; i++) {
-        auto& fn = loadedAssembly->Functions.Push();
-        file.Read(Cast<Byte*>(&fn), sizeof(codefile::FunctionHeader));
-        if (fn.Attributes & codefile::FunctionNative) {
-            continue;
+        if (sc.Type == codefile::SectionCode) {
+            loadedAssembly->CodeSection = &sc;
+            if (loadedAssembly->EntryPoint >= sc.CountOfElements) {
+                loadedAssembly->Err = AsmBadFile;
+                file.Close();
+                return loadedAssembly;
+            }
+
+            sc.Functions.GrowCapacity(sc.CountOfElements);
+            for (UInt32 f = 0; f < sc.CountOfElements; f++) {
+                auto& fn = sc.Functions.Push();
+                file.Read(Cast<Byte*>(&fn), sizeof(codefile::FunctionHeader));
+                if (fn.Flags == codefile::FunctionNative) {
+                    continue;
+                }
+
+                fn.Code.GrowCapacity(fn.SizeOfCode);
+                file.Read(Cast<Byte*>(fn.Code.Data), IntCast<USize>(fn.SizeOfCode));
+                fn.Code.Size = fn.SizeOfCode;
+                fn.Asm = loadedAssembly;
+            }
         }
-
-        fn.Code.GrowCapacity(fn.SizeOfCode);
-        file.Read(Cast<Byte*>(fn.Code.Data), IntCast<USize>(fn.SizeOfCode));
-        fn.Code.Size = fn.SizeOfCode;
-        fn.Asm = loadedAssembly;
-    }
-
-    loadedAssembly->Globals.GrowCapacity(loadedAssembly->NumberOfGlobals);
-    for (codefile::GlobalType i = 0; i < loadedAssembly->NumberOfGlobals; i++) {
-        auto& global = loadedAssembly->Globals.Push();
-        file.Read(Cast<Byte*>(&global), sizeof(codefile::GlobalHeader));
-
-        if (global.Primitive == codefile::PrimitiveByte) {
-            file.Read(Cast<Byte*>(&global.Contant), 1);
+        else if (sc.Type == codefile::SectionData) {
+            loadedAssembly->DataSection = &sc;
+            sc.Data.GrowCapacity(sc.CountOfElements);
+            for (UInt32 g = 0; g < sc.CountOfElements; g++) {
+                auto& element = sc.Data.Push();
+                file.Read(Cast<Byte*>(&element), sizeof(codefile::DataHeader));
+                if (element.Primitive == codefile::PrimitiveByte) {
+                    file.Read(Cast<Byte*>(&element.Contant), 1);
+                }
+                else if (element.Primitive == codefile::PrimitiveInt && element.Primitive == codefile::PrimitiveFloat) {
+                    file.Read(Cast<Byte*>(&element.Contant), 8);
+                }
+            }
         }
-        else if (global.Primitive >= codefile::PrimitiveInt && global.Primitive <= codefile::PrimitiveFloat) {
-            file.Read(Cast<Byte*>(&global.Contant), 8);
+        else if (sc.Type == codefile::SectionST) {
+            loadedAssembly->STSection = &sc;
+            sc.Strings.GrowCapacity(sc.CountOfElements);
+            for (UInt32 s = 0; s < sc.CountOfElements; s++) {
+                UInt16 size = 0;
+                file.Read(Cast<Byte*>(&size), 2);
+
+                auto& str = sc.Strings.Push(size, 1);
+                str.ItemType = codefile::PrimitiveByte;
+
+                file.Read(Cast<Byte*>(str.Items), size);
+                str.Size = size;
+            }
         }
-    }
-
-    loadedAssembly->Strings.GrowCapacity(loadedAssembly->NumberOfStrings);
-    for (codefile::StringType i = 0; i < loadedAssembly->NumberOfStrings;i++) {
-        UInt16 size = 0;
-        file.Read(Cast<Byte*>(&size), 2);
-
-        auto& s = loadedAssembly->Strings.Push(size);
-        s.ListType = ListOfBytes;
-
-        Char* asmStr = Cast<Char*>(alloca(size));
-        asmStr[size-1] = 0;
-        file.Read((Byte*)asmStr, size);
-
-        s = ByteList::New(size);
-        mem::Copy(s.Elements.Data, Cast<Byte*>(asmStr), size);
     }
 
     file.Close();
@@ -92,10 +101,7 @@ Assembly* Assembly::FromFile(Str FilePath) {
 }
 
 void Assembly::Destroy(this Assembly& Self) {
-    Self.Functions.Destroy();
-    Self.Globals.Destroy();
-    Self.Strings.Destroy();
-
+    Self.Sections.Destroy();
     mem::Deallocate(&Self);
 }
 

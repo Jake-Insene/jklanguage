@@ -11,11 +11,11 @@ public:
         Unknown = 0,
 
         Void,
-        Any,
         Byte,
         Int,
         UInt,
         Float,
+        Any,
     };
 
     enum TypeFlags {
@@ -98,22 +98,22 @@ public:
             str += "<InvalidType>";
             break;
         case Type::Void:
-            str += "void";
+            str += "Void";
             break;
         case Type::Any:
-            str += "any";
+            str += "Any";
             break;
         case Type::Byte:
-            str += "byte";
+            str += "Byte";
             break;
         case Type::Int:
-            str += "int";
+            str += "Int";
             break;
         case Type::UInt:
-            str += "uint";
+            str += "UInt";
             break;
         case Type::Float:
-            str += "float";
+            str += "Float";
             break;
         }
 

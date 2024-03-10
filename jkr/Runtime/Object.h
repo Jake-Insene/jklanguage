@@ -6,7 +6,6 @@ namespace runtime {
 
 struct Field {
     Byte Type;
-    Byte Attributes;
 
     Value Content;
 };

@@ -3,33 +3,26 @@
 
 namespace codefile {
 
-enum TypePrimitive : Byte {
+enum PrimitiveType : Byte {
     PrimitiveByte,
-
     PrimitiveInt,
-    PrimitiveIntC8,
-    PrimitiveIntC16,
-    PrimitiveIntC32,
-
     PrimitiveUInt,
-    PrimitiveUIntC8,
-    PrimitiveUIntC16,
-    PrimitiveUIntC32,
-    
     PrimitiveFloat,
-    PrimitiveFloatC32,
-    
     PrimitiveStringRef,
-    
     PrimitiveObject,
-    
-    PrimitiveAny,
-};
+    PrimitiveAny, // Use for store references and values
+                  // for example: Int, Array, Object, Float or a Byte
+    PrimitiveArray,
 
-enum TypeAttributes : Byte {
-    TypeNone = 0,
-    TypeArray = 0x01,
-    TypePointer = 0x02,
+    PrimitiveVector2F,
+    PrimitiveVector3F,
+    PrimitiveVector4F,
+    PrimitiveVector2I,
+    PrimitiveVector3I,
+    PrimitiveVector4I,
+    PrimitiveVector2U,
+    PrimitiveVector3U,
+    PrimitiveVector4U,
 };
 
 }

@@ -38,7 +38,7 @@ typedef void* JKOpaque;
 typedef JKOpaque JKAssembly;
 typedef JKOpaque JKVirtualMachine;
 typedef JKByte* JKString;
-typedef JKOpaque JKList;
+typedef JKOpaque JKArray;
 typedef JKOpaque JKDict;
 
 typedef enum {
@@ -60,9 +60,11 @@ JK_API void jkrUnloadAssembly(JKAssembly Asm);
 
 // Virtual Machine
 
-JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize);
+JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize, JKUInt LocalSize);
 
 JK_API void jkrVMSetAssembly(JKVirtualMachine VM, JKAssembly Asm);
+
+JK_API JKResult jkrVMLink(JKVirtualMachine VM);
 
 JK_API JKResult jkrVMExecuteMain(JKVirtualMachine VM, JKValue* ExitValue);
 
@@ -74,9 +76,9 @@ JK_API JKResult jkrCreateObject(JKThreadState State, JKUInt ObjectType, JKObject
 
 JK_API JKResult jkrGetField(JKThreadState State, JKObject Object, JKByte Index, JKObject* pField);
 
-JK_API JKOpaque jkrListGetBytes(JKThreadState State, JKList ListRef);
+JK_API JKOpaque jkrArrayBytes(JKThreadState State, JKArray ArrayRef);
 
-JK_API JKValue jkrListGet(JKThreadState State, JKList ListRef, JKUInt Index);
+JK_API JKValue jkrArrayGet(JKThreadState State, JKArray ArrayRef, JKUInt Index);
 
 #ifdef __cplusplus
 }

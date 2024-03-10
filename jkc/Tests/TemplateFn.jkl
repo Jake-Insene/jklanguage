@@ -1,0 +1,25 @@
+
+fn Sum(A: AnyType, B: AnyType) AnyType {
+	if (@type(A) != @type(B)) {
+		@compile_error("Can't sum diferent types");
+	}
+	return A + B;
+}
+
+fn SumF() Float {
+	return Sum(1.0, 2.0);
+}
+
+fn SumI() Int {
+	return Sum(1, 2);
+}
+
+fn SumU() {
+	return SumU(1U, 2U);
+}
+
+// Error
+fn SumAny() Any {
+	return Sum(1.0, 2U);
+}
+

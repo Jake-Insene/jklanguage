@@ -1,14 +1,13 @@
 #pragma once
-#include "jkr/CodeFile/Type.h"
+#include "stdjk/CoreHeader.h"
 
 namespace codefile {
 
 struct FieldHeader {
     Byte FieldType;
-    Byte FieldAttributes;
 };
 
-struct StructHeader {
+struct ObjectHeader {
     Byte CountOfFields;
     // A static field is a global
     // FieldHeader Fields[CountOfFields];

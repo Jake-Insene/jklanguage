@@ -1,7 +1,7 @@
 #pragma once
 #include "jkc/Utility/File.h"
 #include "jkc/Parser/Parser.h"
-#include "jkc/CodeGen/Emitter.h"
+#include "jkc/CodeGen/Emitter/Emitter.h"
 #include <stdio.h>
 #include <string>
 

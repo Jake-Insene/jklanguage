@@ -1,33 +1,30 @@
 #pragma once
-#include "jkr/CodeFile/OperandTypes.h"
+#include "stdjk/CoreHeader.h"
 
 namespace codefile {
 
-enum FunctionAttributes : UInt16 {
+enum FunctionFlags : UInt16 {
     FunctionNone = 0x0,
-    FunctionImport = 0x01,
-    FunctionExport = 0x02,
-    FunctionNative = 0x04,
+    FunctionImport,
+    FunctionExport,
+    FunctionNative,
+    FunctionDebugInfo,
 };
 
-constexpr auto MaxArguments = 32;
+constexpr Byte MaxArguments = 32;
 
 struct FunctionHeader {
-    UInt16 Attributes;
-    // Arguments are part of LocalCount but are used for diferent things
-    // If you use the reg callconv you
-    union {
-        struct {
-            Byte Arguments;
-            Byte LocalCount;
-        } NonNative;
-        UInt16 EIndex; // Index in string table: Entry
-    };
+    UInt32 Flags;
+    // This field makes a string index in the string table: Entry
+    UInt32 LocalReserve;
 
-    union {
-        UInt16 SizeOfCode;
-        UInt16 LIndex; // Index in string table: Library
-    };
+    // If type is Native
+    // SizeOfCode is a index in string table: Library
+    UInt32 SizeOfCode;
+};
+
+struct FunctionDebugInfo {
+    UInt16 Name; // Index in string table
 };
 
 }

@@ -1,10 +1,21 @@
 #include "stdjk/IO/File.h"
 #include "stdjk/String.h"
 #include "stdjk/Error.h"
-
 #include <stdio.h>
-#include <sys/stat.h>
-#include <string>
+
+Char HexDigits[] = {
+                '0', '1', '2', '3', '4',
+                '5', '6', '7', '8', '9',
+                'A', 'B', 'C', 'D', 'E',
+                'F',
+};
+
+Char HexDigitsD[] = {
+                '0', '1', '2', '3', '4',
+                '5', '6', '7', '8', '9',
+                'a', 'b', 'c', 'd', 'e',
+                'f',
+};
 
 extern IntPtr __io__File_GetStd(USize Who);
 
@@ -118,14 +129,13 @@ loop:
             Char* rNext = UnsignedToBuff(buff + 21, IntCast<UInt>(c));
             Self.Write(Cast<const Byte*>(rNext), (buff + 21) - rNext);
         }
-        else if (ft == 'x' || ft == 'X') {
-            Str digits = STR("0123456789ABCDEF");
-            Char buff[21] = {};
+        else if (ft == 'x') {
+            Char buff[16] = {};
             UInt hexLen = 0;
             UInt val;
             UInt hexIndex = 0;
             
-            if (ft == 'X') {
+            if (Format[i] == 'q') {
                 hexLen = static_cast<UInt>(8) << 1;
                 val = va_arg(Args, UInt);
             }
@@ -144,35 +154,54 @@ loop:
                 val = (UInt)va_arg(Args, UInt32);
             }
 
-            bool enableZeroDeleter = true;
-            if (Format[i] == ':') {
-                i++;
-                if (Format[i] == '0') {
-                    i++;
-                    enableZeroDeleter = false;
-                }
-            }
-
             hexIndex = (hexLen - 1) * 4;
-            bool foundFirst = false;
-            UInt firstIndex = 0;
             UInt index = 0;
             while (index < hexLen) {
-                Char character = digits[(val >> hexIndex) & 0x0f];
-                if (enableZeroDeleter && character != '0' && !foundFirst) {
-                    firstIndex = index;
-                    foundFirst = true;
-                }
+                Char character = HexDigitsD[(val >> hexIndex) & 0x0f];
 
                 buff[index] = character;
                 ++index;
                 hexIndex -= 4;
             }
 
-            if (firstIndex)
-                Self.Write(Cast<Byte*>(buff + firstIndex), Strlen(Cast<Char*>(buff + firstIndex)));
-            else
-                Self.Write(Cast<Byte*>(buff), Strlen(Cast<Char*>(buff)));
+            Self.Write(Cast<Byte*>(buff), Strlen(Cast<Char*>(buff)));
+        }
+        else if (ft == 'X') {
+            Char buff[16] = {};
+            UInt hexLen = 0;
+            UInt val;
+            UInt hexIndex = 0;
+
+            if (Format[i] == 'q') {
+                hexLen = static_cast<UInt>(8) << 1;
+                val = va_arg(Args, UInt);
+            }
+            else if (Format[i] == 'w') {
+                i++;
+                hexLen = static_cast<UInt>(2) << 1;
+                val = (UInt)va_arg(Args, UInt16);
+            }
+            else if (Format[i] == 'b') {
+                i++;
+                hexLen = static_cast<UInt>(1) << 1;
+                val = (UInt)va_arg(Args, Byte);
+            }
+            else {
+                hexLen = static_cast<UInt>(4) << 1;
+                val = (UInt)va_arg(Args, UInt32);
+            }
+
+            hexIndex = (hexLen - 1) * 4;
+            UInt index = 0;
+            while (index < hexLen) {
+                Char character = HexDigits[(val >> hexIndex) & 0x0f];
+
+                buff[index] = character;
+                ++index;
+                hexIndex -= 4;
+            }
+
+            Self.Write(Cast<Byte*>(buff), Strlen(Cast<Char*>(buff)));
         }
         else if (ft == 'i' || ft == 's') {
             Int c = va_arg(Args, Int);

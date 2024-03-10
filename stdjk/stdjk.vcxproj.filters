@@ -56,9 +56,6 @@
     <ClInclude Include="Mem\PageAllocator.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="Mem\Ptr.h">
-      <Filter>Archivos de encabezado</Filter>
-    </ClInclude>
     <ClInclude Include="Mem\Utility.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>

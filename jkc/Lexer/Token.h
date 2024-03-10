@@ -72,7 +72,7 @@ struct Attribute {
         Native,
         Export,
         Import,
-    } Type;
+    } Type = None;
 
     union Value {
         UInt N = 0;

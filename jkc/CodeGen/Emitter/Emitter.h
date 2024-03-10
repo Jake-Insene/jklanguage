@@ -22,6 +22,8 @@ enum class TmpType {
     LocalReg,
     Global,
     Constant,
+    ArrayExpr,
+    ArrayRef,
 };
 
 enum DebugLevel {
@@ -32,7 +34,6 @@ enum DebugLevel {
 enum Optimization {
     OPTIMIZATION_NONE,
     OPTIMIZATION_RELEASE_FAST,
-    OPTIMIZATION_RELEASE_SMALL,
 };
 
 struct EmitOptions {
@@ -50,13 +51,13 @@ struct [[nodiscard]] TmpValue {
 
     union {
         Byte Reg;
-        codefile::LocalType Local;
-        codefile::GlobalType Global;
+        Byte Local;
+        UInt32 Global;
         Float Real;
         UInt Data = 0;
     };
     AST::TypeDecl Type = {};
-    AST::BinaryOperation LastOp = (AST::BinaryOperation)-1;
+    AST::BinaryOperation LastOp = AST::BinaryOperation::None;
 
     [[nodiscard]] constexpr bool IsErr() const { return Ty == TmpType::Err; }
     [[nodiscard]] constexpr bool IsRegister() const { return Ty == TmpType::Register; }
@@ -64,12 +65,14 @@ struct [[nodiscard]] TmpValue {
     [[nodiscard]] constexpr bool IsLocalReg() const { return Ty == TmpType::LocalReg; }
     [[nodiscard]] constexpr bool IsGlobal() const { return Ty == TmpType::Global; }
     [[nodiscard]] constexpr bool IsConstant() const { return Ty == TmpType::Constant; }
+    [[nodiscard]] constexpr bool IsArrayExpr() const { return Ty == TmpType::ArrayExpr; }
+    [[nodiscard]] constexpr bool IsArrayRef() const { return Ty == TmpType::ArrayRef; }
 };
 
 struct Emitter {
 
     Emitter(StreamOutput& ErrorStream) :
-        ErrorStream(ErrorStream) {}
+        ErrorStream(ErrorStream), Context(), CurrentOptions() {}
 
     ~Emitter() {}
 
@@ -81,27 +84,27 @@ struct Emitter {
                    const SourceLocation& Location, Str Format, ...);
     void GlobalError(Str Format, ...);
     
-    void PreDeclareStatement(mem::Ptr<AST::Statement>& Stat);
+    void PreDeclareStatement(AST::Statement* Stat);
     void PreDeclareFunction(AST::Function* ASTFn);
     void PreDeclareVar(AST::Var* Var);
     void PreDeclareConstVal(AST::ConstVal* ConstVal);
 
-    TmpValue EmitExpresion(mem::Ptr<AST::Expresion>& Expr);
-    void EmitStatement(mem::Ptr<AST::Statement>& Stat);
+    TmpValue EmitExpresion(AST::Expresion* Expr);
+    void EmitStatement(AST::Statement* Stat);
     void EmitFunction(AST::Function* ASTFn);
     void EmitVar(AST::Var* Var);
     void EmitConstVal(AST::ConstVal* ConstVal);
     
-    void EmitFunctionStatement(mem::Ptr<AST::Statement>& Stat, Function& Fn);
+    void EmitFunctionStatement(AST::Statement* Stat, Function& Fn);
     void EmitFunctionReturn(AST::Return* Ret, Function& Fn);
     void EmitFunctionLocal(AST::Var* Var, Function& Fn);
     void EmitFunctionConstVal(AST::ConstVal* ConstVal, Function& Fn);
     void EmitFunctionIf(AST::If* ConstVal, Function& Fn);
 
     TmpValue GetID(const std::u8string& ID, Function& Fn, const SourceLocation& Location);
-    Function* GetFn(mem::Ptr<AST::Expresion>& Target);
+    Function* GetFn(AST::Expresion* Target);
 
-    TmpValue EmitFunctionExpresion(mem::Ptr<AST::Expresion>& Expr, Function& Fn);
+    TmpValue EmitFunctionExpresion(AST::Expresion* Expr, Function& Fn);
     TmpValue EmitFunctionConstant(AST::Constant* Constant, Function& Fn);
     TmpValue EmitFunctionIdentifier(AST::Identifier* ID, Function& Fn);
     TmpValue EmitFunctionCall(AST::Call* Call, Function& Fn);
@@ -113,11 +116,12 @@ struct Emitter {
     TmpValue EmitFunctionDot(AST::Dot* Dot, Function& Fn);
     TmpValue EmitFunctionArrayList(AST::ArrayList* ArrayList, Function& Fn);
     TmpValue EmitFunctionBlock(AST::Block* Block, Function& Fn);
+    TmpValue EmitFunctionArrayAccess(AST::ArrayAccess* ArrayAccess, Function& Fn);
 
     void PushTmp(Function& Fn, const TmpValue& Tmp);
     void MoveTmp(Function& Fn, UInt8 Reg, const TmpValue& Tmp);
-    Byte TypeToPrimitive(const AST::TypeDecl& Type);
-    Byte TypeToAttributes(const AST::TypeDecl& Type);
+    codefile::PrimitiveType TypeToPrimitive(const AST::TypeDecl& Type);
+    void MoveConst(Function& Fn, Byte Dest, UInt64 Const);
 
     UInt8 AllocateRegister() {
         for (auto& r : Registers) {
@@ -143,6 +147,9 @@ struct Emitter {
     struct {
         bool IsInReturn;
         bool IsInCall;
+        bool IsLast;
+        bool IsInIf;
+        bool IsInElse;
     } Context;
 
     RegisterInfo Registers[15] = {
@@ -176,7 +183,7 @@ struct Emitter {
     SymbolTable<Function> Functions;
     SymbolTable<Global> Globals;
     SymbolTable<Constant> Constants;
-    std::unordered_map<std::u8string, codefile::StringType> NativeLibraries;
+    std::unordered_map<std::u8string, UInt32> NativeLibraries;
     List<StringTmp> Strings;
 };
 

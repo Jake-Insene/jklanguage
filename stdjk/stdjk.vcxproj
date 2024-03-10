@@ -29,7 +29,6 @@
     <ClInclude Include="Mem\Align.h" />
     <ClInclude Include="Mem\Allocator.h" />
     <ClInclude Include="Mem\PageAllocator.h" />
-    <ClInclude Include="Mem\Ptr.h" />
     <ClInclude Include="Mem\Utility.h" />
     <ClInclude Include="String.h" />
     <ClInclude Include="Utility.h" />

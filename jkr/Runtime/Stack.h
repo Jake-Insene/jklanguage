@@ -1,7 +1,7 @@
 #pragma once
 #include "stdjk/CoreHeader.h"
 #include "jkr/Runtime/Value.h"
-#include "jkr/Runtime/Global.h"
+#include "jkr/Runtime/DataElement.h"
 
 namespace runtime {
 
@@ -18,7 +18,7 @@ struct [[nodiscard]] Stack {
 struct [[nodiscard]] StackFrame {
     Value* SP;
     Value* FP;
-    Global* Globals;
+    DataElement* DataElements;
     // Store the result value of a call
     Value Result;
 };

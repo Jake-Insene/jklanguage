@@ -1,0 +1,42 @@
+
+
+struct ArrayList<T> {
+	Items: []T;
+	Size: UInt;
+
+	fn New(InitialCapacity: UInt) ArrayList {
+		return ArrayList{
+			Items: new [InitialCapacity]T,
+			Size: 0
+		};
+	}
+
+	fn __destroy__(Self: ArrayList) {
+		
+	}
+}
+
+struct Vector2<T> {
+	x: T;
+	y: T;
+
+	fn New(X: T, Y: T) T {
+		return Vector2{
+			x: X,
+			y: Y,
+		};
+	}
+
+	fn __destroy__(Self: Vector2) {}
+}
+
+fn Main() Int {
+	var arr = ArrayList<Int>::New(10);
+	arr.add(10);
+	
+	return arr.Items[0];
+	// Implicit call to ArrayList<Int>::__destroy__ before returns
+	// and after acquired the element, if the array is local the element can't be a reference
+	// because i will be destroyed after destroy the array
+	// 
+}

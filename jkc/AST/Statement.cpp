@@ -10,33 +10,33 @@ void Statement::Destroy(this Statement& Self) {
     if (Self.Type == StatementType::Function) {
         Function* fn = Cast<Function*>(&Self);
         fn->Name.~basic_string();
-        fn->Body.Destroy();
         fn->Parameters.Destroy();
+        mem::Destroy(fn->Body);
     }
     else if (Self.Type == StatementType::Return) {
         Return* rt = Cast<Return*>(&Self);
-        rt->Value.Destroy();
+        mem::Destroy(rt->Value);
     }
     else if (Self.Type == StatementType::Var) {
         Var* v = Cast<Var*>(&Self);
         v->Name.~basic_string();
-        v->Value.Destroy();
+        mem::Destroy(v->Value);
     }
     else if (Self.Type == StatementType::ConstVal) {
         ConstVal* cv = Cast<ConstVal*>(&Self);
         cv->Name.~basic_string();
-        cv->Value.Destroy();
+        mem::Destroy(cv->Value);
     }
     else if (Self.Type == StatementType::If) {
         If* _if = Cast<If*>(&Self);
-        _if->Body.Destroy();
-        _if->Elif.Destroy();
-        _if->ElseBlock.Destroy();
-        _if->Expr.Destroy();
+        mem::Destroy(_if->Body);
+        mem::Destroy(_if->Expr);
+        mem::Destroy(_if->Elif);
+        mem::Destroy(_if->ElseBlock);
     }
     else if (Self.Type == StatementType::ExpresionStatement) {
         ExpresionStatement* es = Cast<ExpresionStatement*>(&Self);
-        es->Value.Destroy();
+        es->Value->Destroy();
     }
 }
 

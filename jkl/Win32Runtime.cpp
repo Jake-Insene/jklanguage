@@ -1,7 +1,7 @@
 #include "jkr/NI/NI.h"
 #include <Windows.h>
 
-extern "C" JK_EXPORT JKValue write(JKThreadState State, JKUInt Fd, JKList ListRef, JKUInt Size) {
+extern "C" JK_EXPORT JKValue write(JKThreadState State, JKUInt Fd, JKArray ArrayRef, JKUInt Count) {
     (void)State;
     HANDLE h = (HANDLE)Fd;
     if (Fd == 0) {
@@ -11,8 +11,8 @@ extern "C" JK_EXPORT JKValue write(JKThreadState State, JKUInt Fd, JKList ListRe
         h = GetStdHandle(STD_ERROR_HANDLE);
     }
 
-    void* bytes = jkrListGetBytes(State, ListRef);
-    WriteFile(h, bytes, (DWORD)Size, NULL, NULL);
+    void* bytes = jkrArrayBytes(State, ArrayRef);
+    WriteFile(h, bytes, (DWORD)Count, NULL, NULL);
     return JKValue{
         .U = 0,
     };

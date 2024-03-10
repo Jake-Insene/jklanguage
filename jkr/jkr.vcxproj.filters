@@ -21,9 +21,6 @@
     <ClInclude Include="Runtime\Stack.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="Runtime\ThreadExec.h">
-      <Filter>Archivos de encabezado</Filter>
-    </ClInclude>
     <ClInclude Include="Runtime\Assembly.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
@@ -39,16 +36,13 @@
     <ClInclude Include="CodeFile\Function.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="CodeFile\Struct.h">
+    <ClInclude Include="CodeFile\Object.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
     <ClInclude Include="Runtime\Value.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
     <ClInclude Include="Runtime\Object.h">
-      <Filter>Archivos de encabezado</Filter>
-    </ClInclude>
-    <ClInclude Include="CodeFile\OperandTypes.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
     <ClInclude Include="CodeFile\Type.h">
@@ -63,21 +57,18 @@
     <ClInclude Include="Runtime\Function.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="CodeFile\Global.h">
+    <ClInclude Include="CodeFile\Data.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="Runtime\Global.h">
+    <ClInclude Include="Runtime\DataElement.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="Runtime\ListTypes.h">
+    <ClInclude Include="Runtime\Array.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Runtime\Stack.cpp">
-      <Filter>Archivos de origen</Filter>
-    </ClCompile>
-    <ClCompile Include="Runtime\ThreadExec.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
     <ClCompile Include="Runtime\VirtualMachine.cpp">
@@ -93,6 +84,9 @@
       <Filter>Archivos de origen</Filter>
     </ClCompile>
     <ClCompile Include="DllMain.cpp">
+      <Filter>Archivos de origen</Filter>
+    </ClCompile>
+    <ClCompile Include="Runtime\Array.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
   </ItemGroup>

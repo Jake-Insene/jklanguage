@@ -14,7 +14,7 @@ enum _Platform {
 };
 
 enum _Architecture {
-    X64 = 1,
+    X64,
 };
 
 #if defined(_WIN32) || defined(_WIN64)

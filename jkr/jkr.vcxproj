@@ -12,32 +12,30 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CodeFile\Function.h" />
-    <ClInclude Include="CodeFile\Global.h" />
+    <ClInclude Include="CodeFile\Data.h" />
     <ClInclude Include="CodeFile\Header.h" />
     <ClInclude Include="CodeFile\OpCodes.h" />
-    <ClInclude Include="CodeFile\Struct.h" />
-    <ClInclude Include="CodeFile\OperandTypes.h" />
+    <ClInclude Include="CodeFile\Object.h" />
     <ClInclude Include="CodeFile\Type.h" />
-    <ClInclude Include="Runtime\Global.h" />
+    <ClInclude Include="Runtime\DataElement.h" />
     <ClInclude Include="Runtime\Library.h" />
     <ClInclude Include="NI\NI.h" />
     <ClInclude Include="Runtime\Assembly.h" />
     <ClInclude Include="Runtime\Function.h" />
-    <ClInclude Include="Runtime\ListTypes.h" />
+    <ClInclude Include="Runtime\Array.h" />
     <ClInclude Include="Runtime\Object.h" />
     <ClInclude Include="Runtime\Stack.h" />
-    <ClInclude Include="Runtime\ThreadExec.h" />
     <ClInclude Include="Runtime\Value.h" />
     <ClInclude Include="Runtime\VirtualMachine.h" />
     <ClInclude Include="NI\ThreadState.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DllMain.cpp" />
+    <ClCompile Include="Runtime\Array.cpp" />
     <ClCompile Include="Runtime\Impl\Win32\Win32Library.cpp" />
     <ClCompile Include="NI\NI.cpp" />
     <ClCompile Include="Runtime\Assembly.cpp" />
     <ClCompile Include="Runtime\Stack.cpp" />
-    <ClCompile Include="Runtime\ThreadExec.cpp" />
     <ClCompile Include="Runtime\VirtualMachine.cpp" />
   </ItemGroup>
   <ItemGroup>

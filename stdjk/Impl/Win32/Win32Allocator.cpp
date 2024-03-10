@@ -5,10 +5,10 @@
 namespace mem {
 
 Address AllocateAlign(USize Size, USize Alignment) {
-    const USize align = Align(Size, Alignment);
+    const USize alignedSize = Align(Size, Alignment);
     return VirtualAllocEx(
         GetCurrentProcess(),
-        0, align,
+        0, alignedSize,
         MEM_COMMIT | MEM_RESERVE,
         PAGE_READWRITE
     );

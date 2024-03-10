@@ -17,26 +17,26 @@ void Expresion::Destroy(this Expresion& Self) {
     }
     else if (Self.Type == ExpresionType::Group) {
         Group* g = Cast<Group*>(&Self);
-        g->Value.Destroy();
+        mem::Destroy(g->Value);
     }
     else if (Self.Type == ExpresionType::Call) {
         Call* c = Cast<Call*>(&Self);
         c->Arguments.Destroy();
-        c->Target.Destroy();
+        mem::Destroy(c->Target);
     }
     else if (Self.Type == ExpresionType::BinaryOp) {
         BinaryOp* binOp = Cast<BinaryOp*>(&Self);
-        binOp->Left.Destroy();
-        binOp->Right.Destroy();
+        mem::Destroy(binOp->Left);
+        mem::Destroy(binOp->Right);
     }
     else if (Self.Type == ExpresionType::Unary) {
         Unary* un = Cast<Unary*>(&Self);
-        un->Value.Destroy();
+        mem::Destroy(un->Value);
     }
     else if (Self.Type == ExpresionType::Dot) {
         Dot* d = Cast<Dot*>(&Self);
-        d->Left.Destroy();
-        d->Right.Destroy();
+        mem::Destroy(d->Left);
+        mem::Destroy(d->Right);
     }
     else if (Self.Type == ExpresionType::ArrayList) {
         ArrayList* arr = Cast<ArrayList*>(&Self);
@@ -46,6 +46,13 @@ void Expresion::Destroy(this Expresion& Self) {
         Block* b = Cast<Block*>(&Self);
         b->Statements.Destroy();
     }
+    else if (Self.Type == ExpresionType::ArrayAccess) {
+        ArrayAccess* arr = Cast<ArrayAccess*>(&Self);
+        mem::Destroy(arr->Expr);
+        mem::Destroy(arr->IndexExpr);
+    }
+
+    mem::Deallocate(&Self);
 }
 
 }

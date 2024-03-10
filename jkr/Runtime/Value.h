@@ -4,15 +4,15 @@
 namespace runtime {
 
 struct Object;
+struct Array;
 
-struct [[nodiscard]] Value {
-    union {
-        Int Signed;
-        UInt Unsigned;
-        Float Real;
-        Address Ptr;
-        Object* Obj;
-    };
+union [[nodiscard]] Value {
+    Int Signed;
+    UInt Unsigned;
+    Float Real;
+    Address Ptr;
+    Object* Obj;
+    Array* ArrayRef;
 };
 
 }

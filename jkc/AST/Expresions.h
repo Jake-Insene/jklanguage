@@ -3,7 +3,6 @@
 #include "jkc/AST/Expresion.h"
 #include "jkc/AST/Type.h"
 #include "jkc/AST/Enums.h"
-#include "stdjk/Mem/Ptr.h"
 
 #include <string>
 
@@ -26,37 +25,41 @@ struct Identifier : Expresion {
 };
 
 struct Group : Expresion {
-    mem::Ptr<Expresion> Value;
+    Expresion* Value;
 };
 
 struct Call : Expresion {
-    mem::Ptr<Expresion> Target;
-    List<mem::Ptr<Expresion>> Arguments;
+    Expresion* Target;
+    List<Expresion*> Arguments;
 };
 
 struct BinaryOp : Expresion {
-    mem::Ptr<Expresion> Left;
+    Expresion* Left;
     BinaryOperation Op = BinaryOperation::None;
-    mem::Ptr<Expresion> Right;
+    Expresion* Right;
 };
 
 struct Unary : Expresion {
-    mem::Ptr<Expresion> Value;
+    Expresion* Value;
     UnaryOperation Op = UnaryOperation::None;
 };
 
 struct Dot : Expresion {
-    mem::Ptr<Expresion> Left;
-    mem::Ptr<Expresion> Right;
+    Expresion* Left;
+    Expresion* Right;
 };
 
 struct ArrayList : Expresion {
-    List<mem::Ptr<Expresion>> Elements;
+    List<Expresion*> Elements;
 };
 
 struct Block : Expresion {
-    bool HasReturn = false;
-    List<mem::Ptr<Statement>> Statements;
+    List<Statement*> Statements;
+};
+
+struct ArrayAccess : Expresion {
+    Expresion* Expr;
+    Expresion* IndexExpr;
 };
 
 }

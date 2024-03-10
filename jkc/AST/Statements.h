@@ -3,12 +3,13 @@
 #include "jkc/AST/Statement.h"
 #include "jkc/AST/Expresion.h"
 #include "jkc/AST/FunctionParameter.h"
-#include "stdjk/Mem/Ptr.h"
 #include <string>
 
 namespace AST {
 
 struct Expresion;
+struct If;
+struct Block;
 
 struct Function : Statement {
     std::u8string Name;
@@ -16,37 +17,38 @@ struct Function : Statement {
     List<FunctionParameter> Parameters = {};
     
     bool IsDefined = false;
+    bool HasMultiReturn = false;
 
-    mem::Ptr<Block> Body = {};
+    Block* Body = {};
 };
 
 struct Return : Statement {
-    mem::Ptr<Expresion> Value;
+    Expresion* Value;
 };
 
 struct Var : Statement {
     std::u8string Name;
     TypeDecl VarType;
     bool IsDefined = false;
-    mem::Ptr<Expresion> Value;
+    Expresion* Value;
 };
 
 struct ConstVal : Statement {
     std::u8string Name;
     TypeDecl ConstType;
     bool IsDefined = false;
-    mem::Ptr<Expresion> Value;
+    Expresion* Value;
 };
 
 struct If : Statement {
-    mem::Ptr<Expresion> Expr;
-    mem::Ptr<Expresion> Body;
-    mem::Ptr<Statement> Elif;
-    mem::Ptr<Expresion> ElseBlock;
+    Expresion* Expr;
+    Block* Body;
+    If* Elif;
+    Block* ElseBlock;
 };
 
 struct ExpresionStatement : Statement {
-    mem::Ptr<Expresion> Value;
+    Expresion* Value;
 };
 
 }

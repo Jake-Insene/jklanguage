@@ -14,6 +14,7 @@ struct Unary;
 struct Dot;
 struct ArrayList;
 struct Block;
+struct ArrayAccess;
 
 enum class ExpresionType {
     Unknown = 0,
@@ -27,6 +28,7 @@ enum class ExpresionType {
     Dot,
     ArrayList,
     Block,
+    ArrayAccess,
 };
 
 struct Expresion {

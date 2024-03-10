@@ -41,13 +41,13 @@ IntPtr __io__File_Open(Str FilePath, io::FileError& Err) {
 Int __io__File_Write(IntPtr Handle, const Byte* Buff, USize Count) {
     DWORD writed = 0;
 
-    WriteFile(
+    BOOL success = WriteFile(
         Cast<HANDLE>(Handle), 
         Buff, IntCast<DWORD>(Count),
         &writed, nullptr
     );
 
-    if (writed != Count) {
+    if (writed != Count && !success) {
         return io::WriteError;
     }
 
@@ -57,13 +57,13 @@ Int __io__File_Write(IntPtr Handle, const Byte* Buff, USize Count) {
 Int __io__File_Read(IntPtr Handle, Byte* Buff, USize Count) {
     DWORD readed = 0;
 
-    ReadFile(
+    BOOL success = ReadFile(
         Cast<HANDLE>(Handle), 
         Buff, IntCast<DWORD>(Count), 
         &readed, nullptr
     );
 
-    if (readed != Count) {
+    if (readed != Count && !success) {
         return io::ReadError;
     }
 

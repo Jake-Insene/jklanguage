@@ -6,6 +6,9 @@
 std::chrono::high_resolution_clock::time_point start;
 std::chrono::high_resolution_clock::time_point  end;
 
+constexpr JKUInt StackSize = (1028 * 64) / sizeof(JKValue);
+constexpr JKUInt LocalSize = (1028 * 1024) / sizeof(JKValue);
+
 static inline void PrintDuration() {
     Str sufix = STR("ns");
     Int duration = (end - start).count();
@@ -97,22 +100,26 @@ int main() {
         error::Exit(UInt(-1));
     }
 
-    JKVirtualMachine vm;
+    JKVirtualMachine vm = {};
     result = jkrCreateVM(
         &vm,
-        static_cast<USize>(1024) * 1024
+        StackSize,
+        LocalSize
     );
     jkrVMSetAssembly(vm, as);
+
+    result = jkrVMLink(vm);
+    if (result == JK_VM_LINKAGE_ERROR) {
+        io::Println(STR("VM: Linkage error"));
+        error::Exit(UInt(-1));
+    }
 
     start = std::chrono::high_resolution_clock::now();
     JKValue exitValue;
     result = jkrVMExecuteMain(vm, &exitValue);
     end = std::chrono::high_resolution_clock::now();
     if (result != JK_OK) {
-        if (result == JK_VM_LINKAGE_ERROR) {
-            io::Println(STR("VM: Linkage error"));
-        }
-        else if (result == JK_VM_STACK_OVERFLOW) {
+        if (result == JK_VM_STACK_OVERFLOW) {
             io::Println(STR("VM: Stack overflow"));
         }
         else {
@@ -125,7 +132,7 @@ int main() {
     PrintDuration();
     io::Println(STR("]"));
 
-    io::Println(STR("Program exit with code {i}"), exitValue.U);
+    io::Println(STR("Program exit with code {u}"), exitValue.U);
 
     jkrDestroyVM(vm);
     jkrUnloadAssembly(as);
