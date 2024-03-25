@@ -11,12 +11,17 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Align.h" />
+    <ClInclude Include="CodeFile\Array.h" />
     <ClInclude Include="CodeFile\Function.h" />
     <ClInclude Include="CodeFile\Data.h" />
     <ClInclude Include="CodeFile\Header.h" />
     <ClInclude Include="CodeFile\OpCodes.h" />
     <ClInclude Include="CodeFile\Object.h" />
     <ClInclude Include="CodeFile\Type.h" />
+    <ClInclude Include="CoreTypes.h" />
+    <ClInclude Include="Definitions.h" />
+    <ClInclude Include="Error.h" />
     <ClInclude Include="Runtime\DataElement.h" />
     <ClInclude Include="Runtime\Library.h" />
     <ClInclude Include="NI\NI.h" />
@@ -27,7 +32,9 @@
     <ClInclude Include="Runtime\Stack.h" />
     <ClInclude Include="Runtime\Value.h" />
     <ClInclude Include="Runtime\VirtualMachine.h" />
-    <ClInclude Include="NI\ThreadState.h" />
+    <ClInclude Include="String.h" />
+    <ClInclude Include="Utility.h" />
+    <ClInclude Include="Vector.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DllMain.cpp" />
@@ -37,11 +44,6 @@
     <ClCompile Include="Runtime\Assembly.cpp" />
     <ClCompile Include="Runtime\Stack.cpp" />
     <ClCompile Include="Runtime\VirtualMachine.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\stdjk\stdjk.vcxproj">
-      <Project>{5584b0c5-38f5-42f8-9fa8-3f3e25528655}</Project>
-    </ProjectReference>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
@@ -103,7 +105,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AdditionalIncludeDirectories>$(SolutionDir);</AdditionalIncludeDirectories>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Sync</ExceptionHandling>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -135,7 +137,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AdditionalIncludeDirectories>$(SolutionDir);</AdditionalIncludeDirectories>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Sync</ExceptionHandling>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>

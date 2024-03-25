@@ -1,26 +1,25 @@
 #pragma once
 #include "jkc/AST/Expresion.h"
 #include "jkc/AST/Statement.h"
-
-#include <string>
+#include <jkr/Vector.h>
+#include <jkr/String.h>
+#include <memory>
 
 namespace AST {
 
 struct Program {
-    static constexpr Program New(std::u8string Name = STR("")) {
-        return Program{
-            .Name = Name,
-            .Statements = List<AST::Statement*>::New(0),
-        };
-    }
+    using StatementList = Vector<std::unique_ptr<AST::Statement>>;
 
-    constexpr void Destroy(this Program& Self) { 
-        Self.Name.~basic_string();
-        Self.Statements.Destroy();
-    }
+    constexpr Program(String Name) : 
+        Name(Name), Statements() {}
 
-    std::u8string Name;
-    List<AST::Statement*> Statements;
+    constexpr ~Program() {}
+
+    Program(Program&&) = default;
+    Program& operator=(Program&&) = default;
+
+    String Name;
+    StatementList Statements;
 };
 
 }

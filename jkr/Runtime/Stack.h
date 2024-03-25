@@ -1,15 +1,14 @@
 #pragma once
-#include "stdjk/CoreHeader.h"
 #include "jkr/Runtime/Value.h"
-#include "jkr/Runtime/DataElement.h"
 
 namespace runtime {
 
 struct [[nodiscard]] Stack {
+    Stack(USize StackSize);
+    ~Stack();
 
-    static Stack New(USize StackSize);
-
-    void Destroy(this Stack& Self);
+    Stack(Stack&&) = default;
+    Stack& operator=(Stack&&) = default;
 
     USize Size;
     Value* Start;
@@ -18,8 +17,7 @@ struct [[nodiscard]] Stack {
 struct [[nodiscard]] StackFrame {
     Value* SP;
     Value* FP;
-    DataElement* DataElements;
-    // Store the result value of a call
+    // Maybe use
     Value Result;
 };
 

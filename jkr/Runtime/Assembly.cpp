@@ -1,108 +1,92 @@
 #include "jkr/Runtime/Assembly.h"
 #include <jkr/CodeFile/Type.h>
-#include <stdjk/IO/File.h>
-#include <stdjk/Mem/Allocator.h>
-#include <malloc.h>
+#include <fstream>
 
 namespace runtime {
 
-Assembly* Assembly::FromFile(Str FilePath) {
-    Assembly* loadedAssembly = Cast<Assembly*>(
-        mem::Allocate(sizeof(Assembly))
-    );
-    loadedAssembly->FilePath = FilePath;
+Assembly::Assembly(Str FilePath) {
+    this->FilePath = FilePath;
 
-    io::File file = io::File::Open(FilePath);
-    if (file.Err == io::NotExists) {
-        loadedAssembly->Err = AsmNotExists;
-        return loadedAssembly;
+    std::ifstream file{ (const char*)FilePath, std::ios::ate | std::ios::binary };
+    if (!file.is_open()) {
+        Err = AsmNotExists;
+        return;
     }
 
-    if (file.Size() < sizeof(codefile::FileHeader)) {
-        loadedAssembly->Err = AsmBadFile;
-        file.Close();
-        return loadedAssembly;
+    USize size = file.tellg();
+    file.seekg(0);
+    if (size < sizeof(codefile::FileHeader)) {
+        Err = AsmBadFile;
+        file.close();
+        return;
     }
 
-    file.Read(Cast<Byte*>(loadedAssembly), sizeof(codefile::FileHeader));
-    if (file.Size() != loadedAssembly->CheckSize) {
-        loadedAssembly->Err = AsmCorruptFile;
-        file.Close();
-        return loadedAssembly;
+    file.read(reinterpret_cast<char*>(this), sizeof(codefile::FileHeader));
+    if (size != this->CheckSize) {
+        Err = AsmCorruptFile;
+        file.close();
+        return;
     }
 
-    UInt64& sig = *(UInt64*)codefile::Signature;
-    if (loadedAssembly->Signature != sig) {
-        loadedAssembly->Err = AsmCorruptFile;
-        file.Close();
-        return loadedAssembly;
+    UInt32& sig = *(UInt32*)codefile::Signature;
+    if (this->Signature != sig) {
+        Err = AsmCorruptFile;
+        file.close();
+        return;
     }
 
-    loadedAssembly->Sections.GrowCapacity(loadedAssembly->NumberOfSections);
-    for (Byte i = 0; i < loadedAssembly->NumberOfSections; i++) {
-        Section& sc = loadedAssembly->Sections.Push();
-        file.Read(Cast<Byte*>(&sc), sizeof(codefile::SectionHeader));
-
-        if (sc.Type == codefile::SectionCode) {
-            loadedAssembly->CodeSection = &sc;
-            if (loadedAssembly->EntryPoint >= sc.CountOfElements) {
-                loadedAssembly->Err = AsmBadFile;
-                file.Close();
-                return loadedAssembly;
+    if (this->DataSize) {
+        CodeSection.reserve(this->DataSize);
+        for (UInt32 i = 0; i < this->DataSize; i++) {
+            auto& element = DataSection.emplace_back();
+            file.read((char*)&element, sizeof(codefile::DataHeader));
+            if (element.Primitive == codefile::PrimitiveByte) {
+                file.read((char*)&element.Value.Unsigned, 1);
             }
-
-            sc.Functions.GrowCapacity(sc.CountOfElements);
-            for (UInt32 f = 0; f < sc.CountOfElements; f++) {
-                auto& fn = sc.Functions.Push();
-                file.Read(Cast<Byte*>(&fn), sizeof(codefile::FunctionHeader));
-                if (fn.Flags == codefile::FunctionNative) {
-                    continue;
-                }
-
-                fn.Code.GrowCapacity(fn.SizeOfCode);
-                file.Read(Cast<Byte*>(fn.Code.Data), IntCast<USize>(fn.SizeOfCode));
-                fn.Code.Size = fn.SizeOfCode;
-                fn.Asm = loadedAssembly;
-            }
-        }
-        else if (sc.Type == codefile::SectionData) {
-            loadedAssembly->DataSection = &sc;
-            sc.Data.GrowCapacity(sc.CountOfElements);
-            for (UInt32 g = 0; g < sc.CountOfElements; g++) {
-                auto& element = sc.Data.Push();
-                file.Read(Cast<Byte*>(&element), sizeof(codefile::DataHeader));
-                if (element.Primitive == codefile::PrimitiveByte) {
-                    file.Read(Cast<Byte*>(&element.Contant), 1);
-                }
-                else if (element.Primitive == codefile::PrimitiveInt && element.Primitive == codefile::PrimitiveFloat) {
-                    file.Read(Cast<Byte*>(&element.Contant), 8);
-                }
-            }
-        }
-        else if (sc.Type == codefile::SectionST) {
-            loadedAssembly->STSection = &sc;
-            sc.Strings.GrowCapacity(sc.CountOfElements);
-            for (UInt32 s = 0; s < sc.CountOfElements; s++) {
-                UInt16 size = 0;
-                file.Read(Cast<Byte*>(&size), 2);
-
-                auto& str = sc.Strings.Push(size, 1);
-                str.ItemType = codefile::PrimitiveByte;
-
-                file.Read(Cast<Byte*>(str.Items), size);
-                str.Size = size;
+            else if (element.Primitive >= codefile::PrimitiveInt && element.Primitive <= codefile::PrimitiveFloat) {
+                file.read((char*)&element.Value.Unsigned, 8);
             }
         }
     }
 
-    file.Close();
+    if (this->FunctionSize) {
+        CodeSection.reserve(this->FunctionSize);
+        if (EntryPoint >= this->FunctionSize) {
+            Err = AsmBadFile;
+            file.close();
+            return;
+        }
 
-    return loadedAssembly;
+        for (UInt32 i = 0; i < this->FunctionSize; i++) {
+            auto& fn = CodeSection.emplace_back();
+            file.read((char*)&fn, sizeof(codefile::FunctionHeader));
+            fn.Asm = this;
+            if (fn.Flags & codefile::FunctionNative) {
+                continue;
+            }
+
+            fn.Code.resize(fn.SizeOfCode);
+            file.read((char*)fn.Code.data(), fn.SizeOfCode);
+        }
+    }
+
+    if (this->StringsSize) {
+        STSection.reserve(this->StringsSize);
+        for (UInt32 i = 0; i < this->StringsSize; i++) {
+            UInt16 sizeStr = 0;
+            file.read((char*)&sizeStr, UInt16(2));
+
+            auto& str = STSection.emplace_back(sizeStr, codefile::AE_1B);
+
+            file.read((char*)str.Bytes, sizeStr);
+            str.Size = sizeStr;
+        }
+    }
+
+    Err = AsmOk;
+    file.close();
 }
 
-void Assembly::Destroy(this Assembly& Self) {
-    Self.Sections.Destroy();
-    mem::Deallocate(&Self);
-}
+Assembly::~Assembly() {}
 
 }

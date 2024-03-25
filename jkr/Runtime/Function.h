@@ -1,27 +1,19 @@
 #pragma once
-#include "stdjk/List.h"
 #include "jkr/CodeFile/Function.h"
 #include "jkr/Runtime/Value.h"
-
-struct ThreadState;
+#include <vector>
 
 namespace runtime {
 
 struct Assembly;
 
 struct [[nodiscard]] Function : codefile::FunctionHeader {
-    static constexpr Function New() {
-        return Function{
-            .Code = List<Byte>::New(0),
-        };
-    }
+    constexpr Function() {}
 
-    constexpr void Destroy(this Function& Self) {
-        Self.Code.Destroy();
-    }
+    constexpr ~Function() {}
 
-    List<Byte> Code;
-    Value(*Native)(ThreadState*, ...);
+    std::vector<Byte> Code;
+    Value(*Native)(...) = nullptr;
     Assembly* Asm;
 };
 

@@ -1,15 +1,20 @@
 #pragma once
-#include "stdjk/CoreHeader.h"
+#include "jkr/CoreTypes.h"
+#include "jkr/String.h"
 
 using Procedure = void(*)();
 
 struct Library {
     IntPtr Handle = 0;
-    Str FilePath;
+    String FilePath;
 
-    static Library New(Str FilePath);
+    Library() {}
 
-    Procedure Get(this Library& Self, Str Entry);
+    Library(const String& FilePath);
+    ~Library();
 
-    void Destroy(this Library& Self);
+    Library(Library&&) = default;
+    Library& operator=(Library&&) = default;
+
+    Procedure Get(Str Entry);
 };

@@ -1,829 +1,498 @@
 #include "jkr/CodeFile/OpCodes.h"
 #include "jkr/CodeFile/Type.h"
-#include "jkr/NI/ThreadState.h"
 #include "jkr/Runtime/VirtualMachine.h"
-#include <stdjk/Debug.h>
-#include <stdjk/Mem/Allocator.h>
+#include "jkr/Error.h"
+#include "jkr/String.h"
 #include <stdio.h>
 
-#include <unordered_map>
+using Float4 = Float[4];
+using Int4 = Int[4];
+using UInt4 = UInt[4];
+using Byte32 = Byte[32];
+
+union VectorRegister{
+    Float4 FV;
+    Int4 IV;
+    UInt4 UV;
+};
 
 thread_local runtime::Value Registers[16] = {};
-thread_local UInt CMPFlags = {};
+thread_local VectorRegister VR[16] = {};
 
-#define ZERO_BIT 0x1
-#define EQUAL_BIT 0x2
-#define LESS_BIT 0x4
-#define GREATER_BIT 0x8
-#define CARRY_BIT 0x10
-#define SIGN_BIT 0x20
-
-#define DISPATCH(OP) case codefile::OpCode::##OP:
-#define BREAK() break;
+#define ZERO_FLAG 0x01
+#define SIGN_FLAG 0x02
+thread_local UInt CMP = 0;
 
 #define CHECK_ARRAY_INDEX(IndexExpr) \
     if((IndexExpr) >= array->Size) {\
-        RuntimeError(false, STR("Index out of range"));\
+        RuntimeError(false, "Index out of range");\
     }
+
+#define GET_AND_INC(Type, Dest) \
+    Dest = *(Type*)ip;\
+    ip += sizeof(Type);
+
+#define HANDLE_MATH(Case, Op, Field) \
+    case codefile::OpCode::##Case:\
+    GET_AND_INC(UInt16, word);\
+    Registers[MATH_DEST(word)].##Field = Registers[MATH_SRC1(word)].##Field Op Registers[MATH_SRC2(word)].##Field;\
+    break;\
+
+#define HANDLE_MATH8(Case, Op, Field, Type) \
+    case codefile::OpCode::##Case:\
+    util = *ip++;\
+    util2 = *ip++;\
+    Registers[INST_ARG1(util)].##Field = Registers[INST_ARG2(util)].##Field Op Type(util2);\
+    break;\
+
+#define HANDLE_MATH16(Case, Op, Field, Type) \
+    case codefile::OpCode::##Case:\
+    util = *ip++;\
+    GET_AND_INC(UInt16, word);\
+    Registers[INST_ARG1(util)].##Field = Registers[INST_ARG2(util)].##Field Op Type(word);\
+    break;\
 
 namespace runtime {
 
+// Utility
+
+void MakeComparisionInteger(UInt A, UInt B) {
+    UInt diff = A - B;
+    UInt sign = (diff >> 63) & 0x1;
+    CMP |= sign ? SIGN_FLAG : 0;
+    CMP |=
+        ((diff ^ sign) - sign) ? 
+        0 :
+        ZERO_FLAG;
+}
+
+void MakeComparisionFloat(Float A, Float B) {
+    if (A < B) {
+        CMP |= SIGN_FLAG;
+    }
+    if (A > B) {
+        CMP |= SIGN_FLAG;
+    }
+}
+
 static constexpr void Push(StackFrame& Frame, Value Arg) {
-    *Frame.SP = Arg;
-    Frame.SP++;
+    *Frame.SP++ = Arg;
 }
 
 static constexpr Value Pop(StackFrame& Frame) {
     return *--Frame.SP;
 }
 
-VirtualMachine* VirtualMachine::New(USize StackSize, UInt LocalSize, Assembly* Asm) {
-    VirtualMachine* vm = Cast<VirtualMachine*>(
-        mem::Allocate(sizeof(VirtualMachine))
-    );
+VirtualMachine::VirtualMachine(USize StackSize, Assembly* Asm) :
+    VMStack(StackSize), Asm(Asm), Err(VMSuccess), LinkageResolved(false)
+{}
 
-    vm->VMStack = Stack::New(StackSize);
-    vm->Locals = LocalStack::New(LocalSize);
-    vm->Asm = Asm;
-    vm->Libraries = List<Library>::New(0);
-    vm->LinkageResolved = false;
+VirtualMachine::~VirtualMachine() {}
 
-    return vm;
-}
-
-Value VirtualMachine::ExecMain(this VirtualMachine& Self) {
-    if (Self.Asm->Err != AsmOk) return {};
-    if (!Self.LinkageResolved) {
-        Self.Err = VMLinkageError;
+Int VirtualMachine::ExecMain() {
+    if (Asm->Err != AsmOk) return {};
+    if (!LinkageResolved) {
+        Err = VMLinkageError;
         return {};
     }
-    Function* fn = &Self.Asm->CodeSection->Functions[Self.Asm->EntryPoint];
+    
+    Function& fn = Asm->CodeSection[Asm->EntryPoint];
 
     StackFrame frame = {
-        .SP = Self.VMStack.Start,
-        .FP = Self.Locals.Data,
-        .DataElements = Self.Asm->DataSection ? Self.Asm->DataSection->Data.Data : nullptr,
+        .SP = VMStack.Start,
+        .FP = VMStack.Start,
     };
-    return Self.MainLoop(fn, frame);
+    UInt status = MainLoop(fn, frame);
+    (void)status;
+    return Registers[0].Signed;
 }
 
-void VirtualMachine::ResolveExtern(this VirtualMachine& Self) {
-    for (auto& fn : Self.Asm->CodeSection->Functions) {
+void VirtualMachine::ResolveExtern() {
+    for (auto& fn : Asm->CodeSection) {
         if (fn.Flags & codefile::FunctionNative) {
-            Library lib = {};
-            if (!Self.TryLoad(Self.Asm->STSection->Strings[fn.SizeOfCode], lib)) {
-                Self.Err = VMLinkageError;
+            USize lib = {};
+            if (!TryLoad(Asm->STSection[fn.SizeOfCode], lib)) {
+                Err = VMLinkageError;
                 return;
             }
 
-            Str entry = Cast<Str>(Self.Asm->STSection->Strings[fn.LocalReserve].Items);
-            fn.Native = (Value(*)(ThreadState*, ...))lib.Get(entry);
+            UInt entryAddress = UInt(fn.StackArguments | (fn.LocalReserve << 16));
+            Str entry = Str(Asm->STSection[entryAddress].Bytes);
+            fn.Native = (Value(*)(...))Libraries[lib].Get(entry);
+
             if (!fn.Native) {
-                Self.Err = VMLinkageError;
+                Err = VMLinkageError;
                 return;
             }
         }
     }
 
-    Self.LinkageResolved = true;
+    LinkageResolved = true;
 }
 
-bool VirtualMachine::TryLoad(this VirtualMachine& Self, Array& LibName, Library& Lib) {
-    for (auto& lib : Self.Libraries) {
-        USize len = Strlen(lib.FilePath);
+bool VirtualMachine::TryLoad(Array& LibName, USize& Lib) {
+    USize i = 0;
+    for (auto& lib : Libraries) {
+        USize len = lib.FilePath.length();
         if (len != LibName.Size) {
             continue;
         }
 
-        if (mem::Cmp((void*)lib.FilePath, LibName.Items, len)) {
-            Lib = lib;
+        if (memcmp((void*)lib.FilePath.data(), LibName.Bytes, len) == 0) {
+            Lib = i;
             return true;
         }
-    }
-    
-    Char buff[1024] = {};
-    if constexpr (Platform == Windows) {
-        sprintf_s((char*)buff, 1024, "%s.dll", (char*)LibName.Items);
-    }
-    else {
-        sprintf((char*)buff, "lib%s.so", (char*)LibName.Items);
+        i++;
     }
 
-    Lib = Self.Libraries.Push((Char*)buff);
-    if (!Lib.Handle)
+    char buff[512] = {};
+#ifdef _WIN32
+    sprintf_s(buff, 512, "%s.dll", (char*)LibName.Bytes);
+#else
+    sprintf(buff, "lib%s.so", (char*)LibName.Items);
+#endif
+
+    auto& newLib = Libraries.emplace_back((Char*)buff);
+    Lib = Libraries.size() - 1;
+    if (!newLib.Handle)
         return false;
 
     return true;
 }
 
-Value VirtualMachine::ProcessCall(this VirtualMachine& Self, StackFrame& Frame, Function* Fn) {
-    RuntimeError(Fn != nullptr,
-                 STR("Invalid function")
-    );
-
-    if (Fn->Native) {
-        ThreadState state = {
-            .VM = &Self,
-        };
-
-        return Fn->Native(
-            &state,
+UInt VirtualMachine::ProcessCall(StackFrame& Frame, Function& Fn) {
+    if (Fn.Native) {
+        Registers[0] = Fn.Native(
             Registers[1], Registers[2], Registers[3], Registers[4], Registers[5],
             Registers[6], Registers[7], Registers[8], Registers[9], Registers[10]
         );
+        return 0;
     }
 
     StackFrame newFrame = {
-        .SP = Frame.SP,
-        .FP = Frame.FP + Fn->LocalReserve,
-        .DataElements = Frame.DataElements,
+        .SP = Frame.SP + Fn.LocalReserve - Fn.StackArguments,
+        .FP = Frame.SP - Fn.StackArguments,
     };
 
-    return Self.MainLoop(Fn, newFrame);
+    return MainLoop(Fn, newFrame);
 }
 
-Value VirtualMachine::MainLoop(this VirtualMachine& Self, Function* Fn, StackFrame& Frame) {
-    RuntimeError(Fn != nullptr,
-                 STR("Invalid function")
-    );
-
-    Byte* ip = &Fn->Code[0];
+UInt VirtualMachine::MainLoop(Function& Fn, StackFrame& Frame) {
+    Byte* ip = &Fn.Code[0];
 
     Value constant = {};
-    Byte reg = 0;
-    Byte reg2 = 0;
-    UInt qword = {};
+    Byte util = 0;
+    Byte util2 = 0;
+    union {
+        UInt16 word;
+        UInt32 dword;
+        UInt qword = 0;
+    };
     Array* array = nullptr;
 
     while (true) {
-        codefile::OpCode opcode = IntCast<codefile::OpCode>(*ip++);
+        codefile::OpCode opcode = codefile::OpCode(*ip++);
+
         switch (opcode) {
-            DISPATCH(Brk) {
-                debug::Break();
-                BREAK();
-            }
-            DISPATCH(Mov) {
-                reg = *ip++;
-                Registers[reg & 0xF] = Registers[Byte(reg >> 4)];
-                BREAK();
-            }
-            DISPATCH(Mov4) {
-                reg = *ip++;
-                Registers[reg & 0xF].Unsigned = Byte(reg >> 4);
-                BREAK();
-            }
-            DISPATCH(Mov8) {
-                reg = *ip++;
-                Registers[reg].Unsigned = *ip++;
-                BREAK();
-            }
-            DISPATCH(Mov16) {
-                reg = *ip++;
-                Registers[reg].Unsigned = *(UInt16*)ip;
-                ip += 2;
-                BREAK();
-            }
-            DISPATCH(Mov32) {
-                reg = *ip++;
-                Registers[reg].Unsigned = *(UInt32*)ip;
-                ip += 4;
-                BREAK();
-            }
-            DISPATCH(Mov64) {
-                reg = (*ip++);
-                Registers[reg].Unsigned = *(UInt64*)ip;
-                ip += 8;
-                BREAK();
-            }
-            DISPATCH(MovRes) {
-                Registers[(*ip++) & 0xF] = Frame.Result;
-                BREAK();
-            }
-            DISPATCH(LocalSet4) {
-                reg = (*ip++);
-                Frame.FP[reg >> 4] = Registers[reg & 0xF];
-                BREAK();
-            }
-            DISPATCH(LocalGet4) {
-                reg = (*ip++);
-                Registers[reg & 0xF] = Frame.FP[reg >> 4];
-                BREAK();
-            }
-            DISPATCH(LocalSet) {
-                reg = (*ip++);
-                qword = (*ip++);
-                Frame.FP[qword] = Registers[reg];
-                BREAK();
-            }
-            DISPATCH(LocalGet) {
-                reg = (*ip++);
-                qword = (*ip++);
-                Registers[reg] = Frame.FP[qword];
-                BREAK();
-            }
-            DISPATCH(GlobalSet) {
-                qword = *(UInt32*)ip;
-                ip += 4;
-                Frame.DataElements[qword >> 4].Contant = Registers[qword & 0xF];
-                BREAK();
-            }
-            DISPATCH(GlobalGet) {
-                qword = *(UInt32*)ip;
-                ip += 4;
-                Registers[qword & 0xF] = Frame.DataElements[qword >> 4].Contant;
-                BREAK();
-            }
-            DISPATCH(Inc) {
-                reg = (*ip++);
-                reg2 = Byte(reg >> 4);
-                if (reg == 0) {
-                    Registers[reg & 0xF].Signed++;
-                }
-                else if (reg == 1) {
-                    Registers[reg & 0xF].Unsigned++;
-                }
-                else if (reg == 2) {
-                    Registers[reg & 0xF].Real++;
-                }
-            }
-            BREAK();
-            DISPATCH(Dec) {
-                reg = (*ip++);
-                reg2 = Byte(reg >> 4);
-                if (reg == 0) {
-                    Registers[reg & 0xF].Signed--;
-                }
-                else if (reg == 1) {
-                    Registers[reg & 0xF].Unsigned--;
-                }
-                else if (reg == 2) {
-                    Registers[reg & 0xF].Real--;
-                }
-            }
-            BREAK();
-            DISPATCH(Add) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Unsigned = Registers[(reg >> 4)].Unsigned + Registers[reg2 & 0xF].Unsigned;
-            }
-            BREAK();
-            DISPATCH(IAdd) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Signed = Registers[(reg >> 4)].Signed + Registers[reg2 & 0xF].Signed;
-            }
-            BREAK();
-            DISPATCH(FAdd) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Real = Registers[(reg >> 4)].Real + Registers[reg2 & 0xF].Real;
-            }
-            BREAK();
-            DISPATCH(Sub) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Unsigned = Registers[(reg >> 4)].Unsigned - Registers[reg2 & 0xF].Unsigned;
-            }
-            BREAK();
-            DISPATCH(ISub) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Signed = Registers[(reg >> 4)].Signed - Registers[reg2 & 0xF].Signed;
-            }
-            BREAK();
-            DISPATCH(FSub) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Real = Registers[(reg >> 4)].Real - Registers[reg2 & 0xF].Real;
-            }
-            BREAK();
-            DISPATCH(Mul) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Unsigned = Registers[(reg >> 4)].Unsigned * Registers[reg2 & 0xF].Unsigned;
-            }
-            BREAK();
-            DISPATCH(IMul) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Signed = Registers[(reg >> 4)].Signed * Registers[reg2 & 0xF].Signed;
-            }
-            BREAK();
-            DISPATCH(FMul) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Real = Registers[(reg >> 4)].Real * Registers[reg2 & 0xF].Real;
-            }
-            BREAK();
-            DISPATCH(Div) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Unsigned = Registers[(reg >> 4)].Unsigned / Registers[reg2 & 0xF].Unsigned;
-            }
-            BREAK();
-            DISPATCH(IDiv) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Signed = Registers[(reg >> 4)].Signed / Registers[reg2 & 0xF].Signed;
-            }
-            BREAK();
-            DISPATCH(FDiv) {
-                reg = (*ip++);
-                reg2 = (*ip++);
-                Registers[reg & 0xF].Real = Registers[(reg >> 4)].Real / Registers[reg2 & 0xF].Real;
-            }
-            BREAK();
-            DISPATCH(Add8) {
-                reg = (*ip++);
-                constant.Unsigned = (*ip++);
-                Registers[reg & 0xF].Unsigned = Registers[(reg > 4)].Unsigned + constant.Unsigned;
-            }
-            BREAK();
-            DISPATCH(IAdd8) {
-                reg = (*ip++);
-                constant.Unsigned = (*ip++);
-                Registers[reg & 0xF].Signed = Registers[(reg > 4)].Signed + constant.Signed;
-            }
-            BREAK();
-            DISPATCH(Sub8) {
-                reg = (*ip++);
-                constant.Unsigned = (*ip++);
-                Registers[reg & 0xF].Unsigned = Registers[(reg > 4)].Unsigned - constant.Unsigned;
-            }
-            BREAK();
-            DISPATCH(ISub8) {
-                reg = (*ip++);
-                constant.Unsigned = (*ip++);
-                Registers[reg & 0xF].Signed = Registers[(reg > 4)].Signed - constant.Signed;
-            }
-            BREAK();
-            DISPATCH(Mul8) {
-                reg = (*ip++);
-                constant.Unsigned = (*ip++);
-                Registers[reg & 0xF].Unsigned = Registers[(reg > 4)].Unsigned * constant.Unsigned;
-            }
-            BREAK();
-            DISPATCH(IMul8) {
-                reg = (*ip++);
-                constant.Unsigned = (*ip++);
-                Registers[reg & 0xF].Signed = Registers[(reg > 4)].Signed * constant.Signed;
-            }
-            BREAK();
-            DISPATCH(Div8) {
-                reg = (*ip++);
-                constant.Unsigned = (*ip++);
-                Registers[reg & 0xF].Unsigned = Registers[(reg > 4)].Unsigned / constant.Unsigned;
-            }
-            BREAK();
-            DISPATCH(IDiv8) {
-                reg = (*ip++);
-                constant.Unsigned = (*ip++);
-                Registers[reg & 0xF].Signed = Registers[(reg > 4)].Signed / constant.Signed;
-            }
-            BREAK();
-            DISPATCH(Add16) {
-                reg = (*ip++);
-                constant.Unsigned = *(UInt16*)ip;
-                Registers[reg & 0xF].Unsigned = Registers[(reg >> 4)].Unsigned + constant.Unsigned;
-                ip += 2;
-            }
-            BREAK();
-            DISPATCH(IAdd16) {
-                reg = (*ip++);
-                constant.Unsigned = *(UInt16*)ip;
-                ip += 2;
-                Registers[reg & 0xF].Signed = Registers[(reg >> 4)].Signed + constant.Signed;
-            }
-            BREAK();
-            DISPATCH(Sub16) {
-                reg = (*ip++);
-                constant.Unsigned = *(UInt16*)ip;
-                ip += 2;
-                Registers[reg & 0xF].Unsigned = Registers[(reg >> 4)].Unsigned - constant.Unsigned;
-            }
-            BREAK();
-            DISPATCH(ISub16) {
-                reg = (*ip++);
-                constant.Unsigned = *(UInt16*)ip;
-                ip += 2;
-                Registers[reg & 0xF].Signed = Registers[(reg >> 4)].Signed - constant.Signed;
-            }
-            BREAK();
-            DISPATCH(Mul16) {
-                reg = (*ip++);
-                constant.Unsigned = *(UInt16*)ip;
-                ip += 2;
-                Registers[reg & 0xF].Unsigned = Registers[(reg >> 4)].Unsigned * constant.Unsigned;
-            }
-            BREAK();
-            DISPATCH(IMul16) {
-                reg = (*ip++);
-                constant.Unsigned = *(UInt16*)ip;
-                ip += 2;
-                Registers[reg & 0xF].Signed = Registers[(reg >> 4)].Signed * constant.Signed;
-            }
-            BREAK();
-            DISPATCH(Div16) {
-                reg = (*ip++);
-                constant.Unsigned = *(UInt16*)ip;
-                ip += 2;
-                Registers[reg & 0xF].Unsigned = Registers[(reg >> 4)].Unsigned / constant.Unsigned;
-            }
-            BREAK();
-            DISPATCH(IDiv16) {
-                reg = (*ip++);
-                constant.Unsigned = *(UInt16*)ip;
-                ip += 2;
-                Registers[reg & 0xF].Signed = Registers[(reg >> 4)].Signed / constant.Signed;
-            }
-            BREAK();
-            DISPATCH(Cmp) {
-                reg = (*ip++);
-                CMPFlags = 0;
-                if (Registers[reg & 0xF].Unsigned == Registers[(reg >> 4)].Unsigned) {
-                    if (Registers[(reg >> 4)].Unsigned == 0) {
-                        CMPFlags |= ZERO_BIT;
-                    }
-                    CMPFlags |= EQUAL_BIT;
-                }
-                if (Registers[reg & 0xF].Unsigned < Registers[(reg >> 4)].Unsigned) {
-                    CMPFlags |= LESS_BIT;
-                }
-                if (Registers[reg & 0xF].Unsigned > Registers[(reg >> 4)].Unsigned) {
-                    CMPFlags |= GREATER_BIT;
-                }
-            }
-            BREAK();
-            DISPATCH(ICmp) {
-                reg = (*ip++);
-                CMPFlags = 0;
-                if (Registers[reg & 0xF].Signed == Registers[(reg >> 4)].Signed) {
-                    if (Registers[(reg >> 4)].Signed == 0) {
-                        CMPFlags |= ZERO_BIT;
-                    }
-                    CMPFlags |= EQUAL_BIT;
-                }
-                if (Registers[reg & 0xF].Signed < Registers[(reg >> 4)].Signed) {
-                    CMPFlags |= LESS_BIT;
-                }
-                if (Registers[reg & 0xF].Signed > Registers[(reg >> 4)].Signed) {
-                    CMPFlags |= GREATER_BIT;
-                }
-            }
-            BREAK();
-            DISPATCH(FCmp) {
-                reg = (*ip++);
-                CMPFlags = 0;
-                if (Registers[reg & 0xF].Real == Registers[(reg >> 4)].Real) {
-                    if (Registers[(reg >> 4)].Unsigned == 0) {
-                        CMPFlags |= ZERO_BIT;
-                    }
-                    CMPFlags |= EQUAL_BIT;
-                }
-                if (Registers[reg & 0xF].Real < Registers[(reg >> 4)].Real) {
-                    CMPFlags |= LESS_BIT;
-                }
-                if (Registers[reg & 0xF].Real > Registers[(reg >> 4)].Real) {
-                    CMPFlags |= GREATER_BIT;
-                }
-            }
-            BREAK();
-            DISPATCH(TestZ) {
-                reg = *ip++;
-                CMPFlags = 0;
-                if (Registers[reg & 0xF].Unsigned == 0) {
-                    CMPFlags |= EQUAL_BIT;
-                    CMPFlags |= ZERO_BIT;
-                }
-            }
-            BREAK();
-            DISPATCH(Jmp) {
-                ip += *(UInt16*)ip;
-            }
-            BREAK();
-            DISPATCH(Jez) {
-                if (CMPFlags & ZERO_BIT && CMPFlags & EQUAL_BIT)
-                    ip += *(UInt16*)ip;
-                else
-                    ip += 2;
-            }
-            BREAK();
-            DISPATCH(Jnz) {
-                if (CMPFlags & ZERO_BIT && !(CMPFlags & EQUAL_BIT))
-                    ip += *(UInt16*)ip;
-                else
-                    ip += 2;
-            }
-            BREAK();
-            DISPATCH(Je) {
-                if (CMPFlags & EQUAL_BIT)
-                    ip += *(UInt16*)ip;
-                else
-                    ip += 2;
-                BREAK();
-            }
-            DISPATCH(Jne) {
-                if (!(CMPFlags & EQUAL_BIT))
-                    ip += *(UInt16*)ip;
-                else
-                    ip += 2;
-            }
-            BREAK();
-            DISPATCH(Jl) {
-                if (CMPFlags & LESS_BIT)
-                    ip += *(UInt16*)ip;
-                else
-                    ip += 2;
-            }
-            BREAK();
-            DISPATCH(Jle) {
-                if (CMPFlags & LESS_BIT && CMPFlags & EQUAL_BIT)
-                    ip += *(UInt16*)ip;
-                else
-                    ip += 2;
-            }
-            BREAK();
-            DISPATCH(Jg) {
-                if (CMPFlags & GREATER_BIT)
-                    ip += *(UInt16*)ip;
-                else
-                    ip += 2;
-            }
-            BREAK();
-            DISPATCH(Jge) {
-                if (CMPFlags & GREATER_BIT && CMPFlags & EQUAL_BIT)
-                    ip += *(UInt16*)ip;
-                else
-                    ip += 2;
-            }
-            BREAK();
-            DISPATCH(Jmp8) {
-                ip += *ip;
-            }
-            BREAK();
-            DISPATCH(Jez8) {
-                if (CMPFlags & ZERO_BIT && CMPFlags & EQUAL_BIT)
-                    ip += *ip;
-                else
-                    ip++;
-            }
-            BREAK();
-            DISPATCH(Jnz8) {
-                if (CMPFlags & ZERO_BIT && !(CMPFlags & EQUAL_BIT))
-                    ip += *ip;
-                else
-                    ip++;
-            }
-            BREAK();
-            DISPATCH(Je8) {
-                if (CMPFlags & EQUAL_BIT)
-                    ip += *ip;
-                else
-                    ip++;
-            }
-            BREAK();
-            DISPATCH(Jne8) {
-                if (!(CMPFlags & EQUAL_BIT))
-                    ip += *ip;
-                else
-                    ip++;
-            }
-            BREAK();
-            DISPATCH(Jl8) {
-                if (CMPFlags & LESS_BIT)
-                    ip += *ip;
-                else
-                    ip++;
-            }
-            BREAK();
-            DISPATCH(Jle8) {
-                if (CMPFlags & LESS_BIT && CMPFlags & EQUAL_BIT)
-                    ip += *ip;
-                else
-                    ip++;
-            }
-            BREAK();
-            DISPATCH(Jg8) {
-                if (CMPFlags & GREATER_BIT)
-                    ip += *ip;
-                else
-                    ip++;
-            }
-            BREAK();
-            DISPATCH(Jge8) {
-                if (CMPFlags & GREATER_BIT && CMPFlags & EQUAL_BIT)
-                    ip += *ip;
-                else
-                    ip++;
-            }
-            BREAK();
-            DISPATCH(Call8) {
-                qword = *ip++;
-                Function* called = &Fn->Asm->CodeSection->Functions[qword];
-                Frame.Result = Self.ProcessCall(Frame, called);
-            }
-            BREAK();
-            DISPATCH(Call) {
-                qword = *(UInt32*)ip;
-                ip += 4;
-                Function* called = &Fn->Asm->CodeSection->Functions[qword];
-                Frame.Result = Self.ProcessCall(Frame, called);
-            }
-            BREAK();
-            DISPATCH(Ret) {
-                return Registers[0];
-            }
-            BREAK();
-            DISPATCH(ObjectNew) {
+        case codefile::OpCode::Brk:
+            Break();
+            break;
+        case codefile::OpCode::Mov:
+            util = *ip++;
+            Registers[INST_ARG1(util)] = Registers[INST_ARG2(util)];
+            break;
+        case codefile::OpCode::Mov4:
+            util = *ip++;
+            Registers[INST_ARG1(util)].Unsigned = INST_ARG2(util);
+            break;
+        case codefile::OpCode::Mov8:
+            util = *ip++;
+            util2 = *ip++;
+            Registers[INST_ARG1(util)].Unsigned = util2;
+            break;
+        case codefile::OpCode::Mov16:
+            util = *ip++;
+            GET_AND_INC(UInt16, word);
+            Registers[INST_ARG1(util)].Unsigned = word;
+            break;
+        case codefile::OpCode::Mov32:
+            util = *ip++;
+            GET_AND_INC(UInt32, dword);
+            Registers[INST_ARG1(util)].Unsigned = dword;
+            break;
+        case codefile::OpCode::Mov64:
+            util = *ip++;
+            GET_AND_INC(UInt64, qword);
+            Registers[INST_ARG1(util)].Unsigned = qword;
+            break;
+        case codefile::OpCode::Ldstr:
+            util = *ip++;
+            GET_AND_INC(UInt32, dword);
+            Registers[INST_ARG1(util)].Ptr = &Asm->STSection[dword];
+            break;
+        case codefile::OpCode::Ldr:
+            util = *ip++;
+            GET_AND_INC(UInt16, word);
+            if (INST_ARG2(util) == codefile::BaseSP) {
+                Registers[INST_ARG1(util)] = Frame.SP[word];
+            }
+            else  if (INST_ARG2(util) == codefile::BaseFP) {
+                Registers[INST_ARG1(util)] = Frame.FP[word];
+            }
+            else  if (INST_ARG2(util) == codefile::BaseCS) {
+                Registers[INST_ARG1(util)].Unsigned = Asm->DataSection[word].Value.Unsigned;
+            }
+            break;
+        case codefile::OpCode::Str:
+            util = *ip++;
+            if (INST_ARG2(util) == codefile::BaseSP) {
+                Frame.SP[word] = Registers[INST_ARG1(util)];
+            }
+            else  if (INST_ARG2(util) == codefile::BaseFP) {
+                Frame.FP[word] = Registers[INST_ARG1(util)];
+            }
+            else  if (INST_ARG2(util) == codefile::BaseCS) {
+                Asm->DataSection[word].Value.Unsigned = Registers[INST_ARG1(util)].Unsigned;
+            }
+            break;
+        case codefile::OpCode::Cmp:
+            util = *ip++;
+            MakeComparisionInteger(INST_ARG1(util), INST_ARG2(util));
+            break;
+        case codefile::OpCode::FCmp:
+        {
+            union {
+                UInt op1_;
+                Float op1;
+            };
 
-            }
-            BREAK();
-            DISPATCH(FieldSet4) {
+            union {
+                UInt op2_;
+                Float op2;
+            };
 
+            util = *ip++;
+            op1_ = INST_ARG1(util);
+            op2_ = INST_ARG2(util);
+            MakeComparisionFloat(op1, op2);
+        }
+        break;
+        case codefile::OpCode::TestZ:
+            util = *ip++;
+            if (!Registers[INST_ARG1(util)].Unsigned) {
+                CMP |= ZERO_FLAG;
             }
-            BREAK();
-            DISPATCH(FieldGet4) {
+            break;
+        case codefile::OpCode::Jmp:
+            GET_AND_INC(UInt16, word);
+            ip = ip + word;
+            break;
+        case codefile::OpCode::Je:
+            GET_AND_INC(UInt16, word);
+            if (CMP & ZERO_FLAG) {
+                ip = ip + word;
+            }
+            break;
+        case codefile::OpCode::Jne:
+            GET_AND_INC(UInt16, word);
+            if (!(CMP & ZERO_FLAG)) {
+                ip = ip + word;
+            }
+            break;
+        case codefile::OpCode::Jl:
+            GET_AND_INC(UInt16, word);
+            if (CMP & SIGN_FLAG) {
+                ip = ip + word;
+            }
+            break;
+        case codefile::OpCode::Jle:
+            GET_AND_INC(UInt16, word);
+            if (CMP & ZERO_FLAG || CMP & SIGN_FLAG) {
+                ip = ip + word;
+            }
+            break;
+        case codefile::OpCode::Jg:
+            GET_AND_INC(UInt16, word);
+            if (!(CMP & ZERO_FLAG) && !(CMP & SIGN_FLAG)) {
+                ip = ip + word;
+            }
+            break;
+        case codefile::OpCode::Jge:
+            GET_AND_INC(UInt16, word);
+            if (!(CMP & SIGN_FLAG)) {
+                ip = ip + word;
+            }
+            break;
+        case codefile::OpCode::Call:
+        {
+            GET_AND_INC(UInt32, dword);
+            RuntimeError(qword < Asm->FunctionSize, "Invalid function address %08X", dword);
+            Function& target = Asm->CodeSection[dword];
+            UInt status = ProcessCall(Frame, target);
+            (void)status;
+        }
+        break;
+        case codefile::OpCode::Ret:
+            return 0;
+        case codefile::OpCode::RetC:
+            GET_AND_INC(UInt32, dword);
+            return dword;
+        case codefile::OpCode::Inc:
+            util = *ip++;
+            Registers[INST_ARG1(util)].Unsigned++;
+            break;
+        case codefile::OpCode::IInc:
+            util = *ip++;
+            Registers[INST_ARG1(util)].Signed++;
+            break;
+        case codefile::OpCode::FInc:
+            util = *ip++;
+            Registers[INST_ARG1(util)].Real++;
+            break;
+        case codefile::OpCode::Dec:
+            util = *ip++;
+            Registers[INST_ARG1(util)].Unsigned--;
+            break;
+        case codefile::OpCode::IDec:
+            util = *ip++;
+            Registers[INST_ARG1(util)].Signed--;
+            break;
+        case codefile::OpCode::FDec:
+            util = *ip++;
+            Registers[INST_ARG1(util)].Real--;
+            break;
+            {
+                HANDLE_MATH(Add, +, Unsigned);
+                HANDLE_MATH(Sub, -, Unsigned);
+                HANDLE_MATH(Mul, *, Unsigned);
+                HANDLE_MATH(Div, /, Unsigned);
+                HANDLE_MATH(IAdd, +, Signed);
+                HANDLE_MATH(ISub, -, Signed);
+                HANDLE_MATH(IMul, *, Signed);
+                HANDLE_MATH(IDiv, /, Signed);
+                HANDLE_MATH(FAdd, +, Real);
+                HANDLE_MATH(FSub, -, Real);
+                HANDLE_MATH(FMul, *, Real);
+                HANDLE_MATH(FDiv, /, Real);
 
-            }
-            BREAK();
-            DISPATCH(FieldSet) {
+                HANDLE_MATH8(Add8, +, Unsigned, Byte);
+                HANDLE_MATH8(Sub8, -, Unsigned, Byte);
+                HANDLE_MATH8(Mul8, *, Unsigned, Byte);
+                HANDLE_MATH8(Div8, / , Unsigned, Byte);
+                HANDLE_MATH8(IAdd8, +, Signed, Int8);
+                HANDLE_MATH8(ISub8, -, Signed, Int8);
+                HANDLE_MATH8(IMul8, *, Signed, Int8);
+                HANDLE_MATH8(IDiv8, / , Signed, Int8);
 
-            }
-            BREAK();
-            DISPATCH(FieldGet) {
+                HANDLE_MATH16(Add16, +, Unsigned, UInt16);
+                HANDLE_MATH16(Sub16, -, Unsigned, UInt16);
+                HANDLE_MATH16(Mul16, *, Unsigned, UInt16);
+                HANDLE_MATH16(Div16, / , Unsigned, UInt16);
+                HANDLE_MATH16(IAdd16, +, Signed, Int16);
+                HANDLE_MATH16(ISub16, -, Signed, Int16);
+                HANDLE_MATH16(IMul16, *, Signed, Int16);
+                HANDLE_MATH16(IDiv16, / , Signed, Int16);
 
-            }
-            BREAK();
-            DISPATCH(ObjectDestroy) {
+                HANDLE_MATH(Or, |, Unsigned);
+                HANDLE_MATH(And, &, Unsigned);
+                HANDLE_MATH(XOr, ^, Unsigned);
+                HANDLE_MATH(Shl, <<, Unsigned);
+                HANDLE_MATH(Shr, >>, Unsigned);
 
-            }
-            BREAK();
-            DISPATCH(ArrayNew) {
-                reg = *ip++; // Dest
-                reg2 = *ip++;
-                array = Cast<Array*>(
-                    mem::Allocate(sizeof(Array))
-                );
-                array->ItemType = codefile::PrimitiveType(reg2);
+                HANDLE_MATH8(Or8, | , Unsigned, Byte);
+                HANDLE_MATH8(And8, &, Unsigned, Byte);
+                HANDLE_MATH8(XOr8, ^, Unsigned, Byte);
+                HANDLE_MATH8(Shl8, << , Unsigned, Byte);
+                HANDLE_MATH8(Shr8, >> , Unsigned, Byte);
 
-                if (reg2 == codefile::PrimitiveByte) {
-                    *array = Array::New(Registers[Byte(reg >> 4)].Unsigned, 1);
-                    Registers[reg & 0xF].ArrayRef = array;
-                }
-                else if (reg2 >= codefile::PrimitiveInt
-                         || reg <= codefile::PrimitiveAny) {
-                    *array = Array::New(Registers[Byte(reg >> 4)].Unsigned, 8);
-                    Registers[reg & 0xF].ArrayRef = array;
-                }
+                HANDLE_MATH16(Or16, | , Unsigned, UInt16);
+                HANDLE_MATH16(And16, &, Unsigned, UInt16);
+                HANDLE_MATH16(XOr16, ^, Unsigned, UInt16);
             }
-            BREAK();
-            DISPATCH(ArrayObjectNew) {
+        case codefile::OpCode::Not:
+            Registers[INST_ARG1(util)].Unsigned = ~Registers[INST_ARG1(util)].Unsigned;
+            break;
+        case codefile::OpCode::Neg:
+            Registers[INST_ARG1(util)].Signed = -Registers[INST_ARG1(util)].Signed;
+            break;
+        case codefile::OpCode::Push8:
+            Push(Frame, { .Unsigned = *ip++ });
+            break;
+        case codefile::OpCode::Push16:
+            GET_AND_INC(UInt16, word);
+            Push(Frame, { .Unsigned = word });
+            break;
+        case codefile::OpCode::Push32:
+            GET_AND_INC(UInt32, dword);
+            Push(Frame, { .Unsigned = dword });
+            break;
+        case codefile::OpCode::Push64:
+            GET_AND_INC(UInt32, qword);
+            Push(Frame, { .Unsigned = qword });
+            break;
+        case codefile::OpCode::Popd:
+            (void)Pop(Frame);
+            break;
+        case codefile::OpCode::Push:
+            util = *ip++;
+            Push(Frame, Registers[INST_ARG1(util)]);
+            break;
+        case codefile::OpCode::Pop:
+            util = *ip++;
+            Registers[INST_ARG1(util)] = Pop(Frame);
+            break;
+        case codefile::OpCode::ArrayNew:
+            util = *ip++;
+            qword = Registers[INST_ARG1(util)].Unsigned;
+            util2 = Byte(Registers[INST_ARG2(util)].Unsigned);
 
-            }
-            BREAK();
-            DISPATCH(ArrayLen) {
-                reg = *ip++;
-                array = Registers[reg & 0xF].ArrayRef;
-                Registers[reg & 0xF].Unsigned = array->Size;
-            }
-            BREAK();
-            DISPATCH(ArraySet) {
-                reg = *ip++;
-                reg2 = *ip++;
-                array = Registers[reg & 0xF].ArrayRef;
-                CHECK_ARRAY_INDEX(Registers[reg >> 4].Unsigned);
+            Registers[INST_ARG1(util)].ArrayRef = new Array(qword, codefile::ArrayElement(util2));
+            break;
+        case codefile::OpCode::ArrayL:
+            util = *ip++;
+            array = Registers[INST_ARG1(util)].ArrayRef;
+            Registers[INST_ARG2(util)].Unsigned = array->Size;
+            break;
+        case codefile::OpCode::ArrayLoad:
+            util = *ip++;
+            util2 = *ip++;
+            array = Registers[INST_ARG1(util)].ArrayRef;
+            qword = Registers[INST_ARG2(util)].Unsigned;
+            CHECK_ARRAY_INDEX(qword);
 
-                if (array->ItemType == codefile::PrimitiveByte) {
-                    ((Byte*)array->Items)[Registers[reg >> 4].Unsigned] = Byte(Registers[reg2 & 0xF].Unsigned);
-                }
-                else if (array->ItemType >= codefile::PrimitiveInt
-                         || reg <= codefile::PrimitiveAny) {
-                    ((UInt*)array->Items)[Registers[reg >> 4].Unsigned] = Registers[reg2 & 0xF].Unsigned;
-                }
+            if (array->ElementSize == 1) {
+                Registers[INST_ARG1(util2)].Unsigned = array->GetByte(qword);
             }
-            BREAK();
-            DISPATCH(ArrayGet) {
-                reg = *ip++;
-                reg2 = *ip++;
-                array = Registers[reg & 0xF].ArrayRef;
-                CHECK_ARRAY_INDEX(Registers[reg >> 4].Unsigned);
+            else if (array->ElementSize == 8) {
+                Registers[INST_ARG1(util2)].Unsigned = array->GetUInt(qword);
+            }
+            break;
+        case codefile::OpCode::ArrayStore:
+            util = *ip++;
+            util2 = *ip++;
+            array = Registers[INST_ARG1(util)].ArrayRef;
+            qword = Registers[INST_ARG2(util)].Unsigned;
+            CHECK_ARRAY_INDEX(qword);
 
-                if (array->ItemType == codefile::PrimitiveByte) {
-                    Registers[reg2 & 0xF].Unsigned = ((Byte*)array->Items)[Registers[reg >> 4].Unsigned];
-                }
-                else if (array->ItemType >= codefile::PrimitiveInt
-                         || reg <= codefile::PrimitiveAny) {
-                    Registers[reg2 & 0xF].Unsigned = ((UInt*)array->Items)[Registers[reg >> 4].Unsigned];
-                }
+            if (array->ElementSize == 1) {
+                array->GetByte(qword) = Byte(Registers[INST_ARG1(util2)].Unsigned);
             }
-            BREAK();
-            DISPATCH(ArrayDestroy) {
-                reg = *ip++;
-                array = Registers[reg & 0xF].ArrayRef;
-                array->Destroy();
-                mem::Deallocate(array);
+            else if (array->ElementSize == 8) {
+                array->GetUInt(qword) = Registers[INST_ARG1(util2)].Unsigned;
             }
-            BREAK();
-            DISPATCH(StringGet4) {
-                reg = (*ip++);
-                Registers[reg & 0xF].ArrayRef = &Fn->Asm->STSection->Strings[Byte(reg >> 4)];
-            }
-            BREAK();
-            DISPATCH(StringGet) {
-                qword = *(UInt32*)ip;
-                ip += 4;
-                Registers[(qword & 0xF)].ArrayRef = &Fn->Asm->STSection->Strings[(qword >> 4)];
-            }
-            BREAK();
-            DISPATCH(Push8) {
-                constant.Unsigned = (*ip++);
-                Push(Frame, constant);
-            }
-            BREAK();
-            DISPATCH(Push16) {
-                constant.Unsigned = *(UInt16*)ip;
-                ip += 2;
-                Push(Frame, constant);
-            }
-            BREAK();
-            DISPATCH(Push32) {
-                constant.Unsigned = *(UInt32*)ip;
-                ip += 4;
-                Push(Frame, constant);
-            }
-            BREAK();
-            DISPATCH(Push64) {
-                constant.Unsigned = *(UInt64*)ip;
-                ip += 8;
-                Push(Frame, constant);
-            }
-            BREAK();
-            DISPATCH(PopTop)
-                (void)Pop(Frame);
-            BREAK();
-            DISPATCH(PushR0)
-            DISPATCH(PushR1)
-            DISPATCH(PushR2)
-            DISPATCH(PushR3)
-            DISPATCH(PushR4)
-            DISPATCH(PushR5)
-            DISPATCH(PushR6)
-            DISPATCH(PushR7)
-            DISPATCH(PushR8)
-            DISPATCH(PushR9)
-            DISPATCH(PushR10)
-            DISPATCH(PushR11)
-            DISPATCH(PushR12)
-            DISPATCH(PushR13)
-            DISPATCH(PushR14)
-            DISPATCH(PushR15) {
-                reg = Byte(opcode);
-                Push(
-                    Frame,
-                    Registers[reg & 0xF]
-                );
-            }
-            BREAK();
-            DISPATCH(PopR0)
-            DISPATCH(PopR1)
-            DISPATCH(PopR2)
-            DISPATCH(PopR3)
-            DISPATCH(PopR4)
-            DISPATCH(PopR5)
-            DISPATCH(PopR6)
-            DISPATCH(PopR7)
-            DISPATCH(PopR8)
-            DISPATCH(PopR9)
-            DISPATCH(PopR10)
-            DISPATCH(PopR11)
-            DISPATCH(PopR12)
-            DISPATCH(PopR13)
-            DISPATCH(PopR14)
-            DISPATCH(PopR15) {
-                reg = Byte(opcode);
-                Registers[reg & 0xF] = Pop(Frame);
-            }
-            BREAK();
-            DISPATCH(PushLocal) {
-                reg = *ip++;
-                Push(Frame, Frame.FP[reg]);
-            }
-            BREAK();
-            DISPATCH(PopLocal) {
-                reg = *ip++;
-                Frame.FP[reg] = Pop(Frame);
-            }
-            BREAK();
+
+            break;
+        case codefile::OpCode::ArrayDestroy:
+            util = *ip++;
+            array = Registers[INST_ARG1(util)].ArrayRef;
+            delete array;
+            array = nullptr;
+            break;
         default:
-            RuntimeError(0, STR("Invalid OpCode 0x{xb:0}"), (Byte)opcode);
-            BREAK();
+            RuntimeError(0, "Invalid OpCode %X\n", Byte(opcode));
+            break;
         }
     }
-}
-
-void VirtualMachine::Destroy(this VirtualMachine& Self) {
-    Self.Libraries.Destroy();
-    mem::Deallocate(&Self);
 }
 
 }

@@ -1,90 +1,83 @@
 #pragma once
 #include "jkc/Lexer/Token.h"
-#include "jkc/Utility/Slice.h"
-#include "jkc/Utility/File.h"
 
 struct Lexer {
-    static Lexer New(StreamOutput& ErrorStream, Str FileName, Slice<Char> Content) {
-        return Lexer{
-            .FileName = FileName,
-            .ErrorStream = ErrorStream,
-            .Content = Content,
-            .Current = IntCast<Char>(Content.Len ? Content[0] : '\0'),
-            .Line = 1,
-        };
+    constexpr Lexer(FILE* ErrorStream, const char* FileName, const StringView& Content) :
+        FileName(FileName), ErrorStream(ErrorStream), FileContent(Content), Line(1)
+    {
+        Current = Char(Content.size() ? Content[0] : '\0');
     }
 
     void Destroy() {}
 
-    constexpr void Set(this Lexer& Self, Str FileName, Slice<Char> Content) {
-        Self.FileName = FileName;
-        Self.Content = Content;
-        Self.IsPanicMode = false;
-        Self.Current = 0;
-        Self.Index = 0;
-        Self.Line = 1;
+    void Set(const char* FilePath, const StringView& Content) {
+        FileName = FilePath;
+        FileContent = Content;
+        IsPanicMode = false;
+        Current = 0;
+        Index = 0;
+        Line = 1;
     
-        if (Content.Len) { Self.Current = Content[0]; }
+        if (Content.size()) { Current = Content[0]; }
     }
 
-    constexpr bool Success(this const Lexer& Self) { return !Self.IsPanicMode; }
+    constexpr bool Success() { return !IsPanicMode; }
     
-    Token GetNext(this Lexer& Self);
+    Token GetNext();
 
-    constexpr void Advance(this Lexer& Self) {
-        if ((Self.Index + 1) < Self.Content.Len) {
-            Self.Index++;
-            Self.Current = Self.Content.Data[Self.Index];
+    constexpr void Advance() {
+        if ((Index + 1) < FileContent.size()) {
+            Index++;
+            Current = FileContent[Index];
 
-            if (Self.Current == '\n') Self.Line++;
+            if (Current == '\n') Line++;
         }
         else {
-            Self.Current = '\0';
+            Current = '\0';
         }
     }
 
-    constexpr void SkipWhiteSpace(this Lexer& Self) {
+    constexpr void SkipWhiteSpace() {
         while (
-            Self.Current == ' ' ||
-            Self.Current == '\t' ||
-            Self.Current == '\n' ||
-            Self.Current == '\r') {
-            Self.Advance();
+            Current == ' ' ||
+            Current == '\t' ||
+            Current == '\n' ||
+            Current == '\r') {
+            Advance();
         }
     }
 
-    constexpr void MakeSimple(this Lexer& Self, TokenType Type, Token& Tk) {
-        Tk = Token(Type, TokenValue(), SourceLocation(Self.FileName, Self.Line));
-        Self.Advance();
+    constexpr void MakeSimple(Type Type, Token& Tk) {
+        Tk = Token(Type, TokenValue(), SourceLocation(FileName, Line));
+        Advance();
     }
 
-    constexpr void MakeTwo(this Lexer& Self, TokenType Type, Token& Tk) {
-        Tk = Token(Type, TokenValue(), SourceLocation(Self.FileName, Self.Line));
-        Self.Advance();
-        Self.Advance();
+    constexpr void MakeTwo(Type Type, Token& Tk) {
+        Tk = Token(Type, TokenValue(), SourceLocation(FileName, Line));
+        Advance();
+        Advance();
     }
 
-    constexpr void MakeThree(this Lexer& Self, TokenType Type, Token& Tk) {
-        Tk = Token(Type, TokenValue(), SourceLocation(Self.FileName, Self.Line));
-        Self.Advance();
-        Self.Advance();
-        Self.Advance();
+    constexpr void MakeThree(Type Type, Token& Tk) {
+        Tk = Token(Type, TokenValue(), SourceLocation(FileName, Line));
+        Advance();
+        Advance();
+        Advance();
     }
 
-    constexpr Char GetOffset(this Lexer& Self, UInt32 Off) {
-        return Self.Index + Off < Self.Content.Len ? Self.Content[Self.Index + Off] : '\0';
+    constexpr Char GetOffset(UInt32 Off) {
+        return Index + Off < FileContent.size() ? FileContent[Index + Off] : '\0';
     }
 
-    Token GetIdentifier(this Lexer& Self);
-    Token GetDigit(this Lexer& Self);
-    Token GetString(this Lexer& Self);
-    bool ParseScapeSequence(this Lexer& Self, std::u8string& Str);
+    Token GetIdentifier();
+    Token GetDigit();
+    Token GetString();
 
-    Str FileName;
-    StreamOutput& ErrorStream;
+    const char* FileName;
+    FILE* ErrorStream;
     bool IsPanicMode = false;
 
-    Slice<Char> Content;
+    StringView FileContent;
     Char Current = 0;
     USize Index = 0;
     USize Line = 1;

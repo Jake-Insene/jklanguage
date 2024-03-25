@@ -1,261 +1,296 @@
 #include "jkc/Lexer/Lexer.h"
+#include <jkr/Definitions.h>
+#include <cassert>
 
 struct IdentifierInfo {
     UInt32 Len;
-    const char* Str;
-    TokenType Type;
+    Str Str;
+    Type Type;
 };
 
 static IdentifierInfo Identifiers[] = {
-        {.Len = 2, .Str = "fn", .Type = TokenType::Fn },
-        {.Len = 6, .Str = "return", .Type = TokenType::Return },
-        
-        {.Len = 3, .Str = "var", .Type = TokenType::Var },
-        {.Len = 5, .Str = "const", .Type = TokenType::Const },
-        
-        {.Len = 2, .Str = "if", .Type = TokenType::If },
-        {.Len = 4, .Str = "elif", .Type = TokenType::Elif },
-        {.Len = 4, .Str = "else", .Type = TokenType::Else },
-        {.Len = 3, .Str = "for", .Type = TokenType::For },
-        {.Len = 5, .Str = "while", .Type = TokenType::While },
+    {.Len = 2, .Str = u8"fn", .Type = Type::Fn },
+    {.Len = 6, .Str = u8"return", .Type = Type::Return },
+    
+    {.Len = 3, .Str = u8"var", .Type = Type::Var },
+    {.Len = 5, .Str = u8"const", .Type = Type::Const },
+    
+    {.Len = 2, .Str = u8"if", .Type = Type::If },
+    {.Len = 4, .Str = u8"elif", .Type = Type::Elif },
+    {.Len = 4, .Str = u8"else", .Type = Type::Else },
+    {.Len = 3, .Str = u8"for", .Type = Type::For },
+    {.Len = 5, .Str = u8"while", .Type = Type::While },
 
-        {.Len = 3, .Str = "Any", .Type = TokenType::TypeAny },
-        {.Len = 4, .Str = "Void", .Type = TokenType::TypeVoid },
-        {.Len = 4, .Str = "Byte", .Type = TokenType::TypeByte },
-        {.Len = 4, .Str = "Bool", .Type = TokenType::TypeByte },
-        {.Len = 3, .Str = "Int", .Type = TokenType::TypeInt },
-        {.Len = 4, .Str = "UInt", .Type = TokenType::TypeUInt },
-        {.Len = 5, .Str = "Float", .Type = TokenType::TypeFloat },
+    {.Len = 3, .Str = u8"Any", .Type = Type::TypeAny },
+    {.Len = 4, .Str = u8"Void", .Type = Type::TypeVoid },
+    {.Len = 4, .Str = u8"Byte", .Type = Type::TypeByte },
+    {.Len = 4, .Str = u8"Bool", .Type = Type::TypeByte },
+    {.Len = 3, .Str = u8"Int", .Type = Type::TypeInt },
+    {.Len = 4, .Str = u8"UInt", .Type = Type::TypeUInt },
+    {.Len = 5, .Str = u8"Float", .Type = Type::TypeFloat },
+
+    {.Len = 6, .Str = u8"extern", .Type = Type::ExternAttr },
 };
 
 static inline void FindIdentifier(Token& Tk) {
     for (UInt32 i = 0; i < std::size(Identifiers); i++) {
-        if (Identifiers[i].Len != Tk.Value.Str.size())
+        if (Identifiers[i].Len != Tk.Value.StrRef.size())
             continue;
 
-        if (memcmp(Identifiers[i].Str, Tk.Value.Str.c_str(), Identifiers[i].Len) == 0) {
+        if (memcmp(Identifiers[i].Str, Tk.Value.StrRef.data(), Identifiers[i].Len) == 0) {
             Tk.Type = Identifiers[i].Type;
             return;
         }
     }
 
-    Tk.Type = TokenType::Identifier;
+    Tk.Type = Type::Identifier;
 }
 
-Token Lexer::GetIdentifier(this Lexer& Self) {
+Token Lexer::GetIdentifier() {
     Token tk{};
-    tk.Type = TokenType::Unknown;
-    tk.Location = SourceLocation(Self.FileName, Self.Line);
+    tk.Type = Type::Unknown;
+    tk.Location = SourceLocation(FileName, Line);
 
-    tk.Value.Str = {};
-    while (isalnum(Self.Current) || Self.Current == '_') {
-        tk.Value.Str.push_back(Self.Current);
-        Self.Advance();
+    USize start = Index;
+    while (isalnum(Current) || Current == '_') {
+        Advance();
     }
+    tk.Value.StrRef = FileContent.substr(start, Index - start);
 
     FindIdentifier(tk);
     return tk;
 }
 
-Token Lexer::GetDigit(this Lexer& Self) {
+Token Lexer::GetDigit() {
     Token tk{};
-    tk.Type = TokenType::ConstInteger;
-    tk.Location = SourceLocation(Self.FileName, Self.Line);
+    tk.Type = Type::ConstInteger;
+    tk.Location = SourceLocation(FileName, Line);
     Int32 base = 10;
 
     std::string digit{};
 loop:
-    while (isdigit(Self.Current)) {
-        digit.push_back(Self.Current);
-        Self.Advance();
+    while (isdigit(Current)) {
+        digit.push_back(Current);
+        Advance();
     }
 
-    if (Self.Current == '.') {
-        tk.Type = TokenType::ConstFloat;
-        Self.Advance();
+    if (Current == '.') {
+        tk.Type = Type::ConstFloat;
+        Advance();
         digit.push_back('.');
         goto loop;
     }
-    else if (Self.Current == 'U') {
-        tk.Type = TokenType::ConstUInteger;
-        Self.Advance();
+    else if (Current == 'U') {
+        tk.Type = Type::ConstUInteger;
+        Advance();
     }
 
-    if (tk.Type == TokenType::ConstFloat)
+    if (tk.Type == Type::ConstFloat)
         tk.Value.Real = std::stod(digit);
-    else if (tk.Type == TokenType::ConstUInteger)
+    else if (tk.Type == Type::ConstUInteger)
         tk.Value.Unsigned = std::stoull(digit, NULL, base);
     else
         tk.Value.Signed = std::stoll(digit, NULL, base);
     return tk;
 }
 
-Token Lexer::GetString(this Lexer& Self) {
+Token Lexer::GetString() {
     Token tk{};
-    tk.Type = TokenType::ConstString;
-    tk.Location = SourceLocation(Self.FileName, Self.Line);
+    tk.Type = Type::ConstString;
+    tk.Location = SourceLocation(FileName, Line);
 
-    Self.Advance();
+    Advance();
 
     tk.Value.Str = {};
-    while (Self.Current != '\"' && Self.Current != '\0') {
-        if (!Self.ParseScapeSequence(tk.Value.Str)) {
-            tk.Value.Str.push_back(Self.Current);
-            Self.Advance();
+    while (Current != '\"' && Current != '\0') {
+        if (Current == '\\') {
+            Advance();
+            switch (Current) {
+            case '0':
+                tk.Value.Str.push_back('\0');
+                break;
+            case 'n':
+                tk.Value.Str.push_back('\n');
+                break;
+            case 't':
+                tk.Value.Str.push_back('\t');
+                break;
+            case 'r':
+                tk.Value.Str.push_back('\r');
+                break;
+            default:
+                assert(0 && "Invalid string character");
+                UNREACHABLE();
+                break;
+            }
+            Advance();
+
+        }
+        else {
+            tk.Value.Str.push_back(Current);
+            Advance();
         }
     }
 
-    if (Self.Current == '\0') {
-        Self.ErrorStream.Println(STR("{s}:{u}: Error: Bad string"), Self.FileName, Self.Line);
-        Self.IsPanicMode = true;
+    if (Current == '\0') {
+        fprintf(ErrorStream, "%s:%llu: Error: Bad string\n", FileName, Line);
+        IsPanicMode = true;
     }
 
-    Self.Advance();
+    Advance();
 
     return tk;
 }
 
-bool Lexer::ParseScapeSequence(this Lexer& Self, std::u8string& Str) {
-    if (Self.Current == '\\') {
-        Self.Advance();
-        switch (Self.Current) {
-        case '0': Str.push_back('\0'); break;
-        case 'n': Str.push_back('\n'); break;
-        case 'r': Str.push_back('\r'); break;
-        case 't': Str.push_back('\t'); break;
-        default:
-            Self.ErrorStream.Println(STR("{s}:{u}: Warn: Unknown scape sequence"), Self.FileName, Self.Line);
-            break;
-        }
-
-        Self.Advance();
-        return true;
-    }
-
-    return false;
-}
-
-Token Lexer::GetNext(this Lexer& Self) {
+Token Lexer::GetNext() {
 start:
     Token tk{};
 
-    Self.SkipWhiteSpace();
+    SkipWhiteSpace();
 
-    switch (Self.Current) {
+    switch (Current) {
     case ',':
-        Self.MakeSimple(TokenType::Comma, tk);
+        MakeSimple(Type::Comma, tk);
         break;
     case '.':
-        Self.MakeSimple(TokenType::Dot, tk);
+        MakeSimple(Type::Dot, tk);
         break;
     case '(':
-        Self.MakeSimple(TokenType::LeftParent, tk);
+        MakeSimple(Type::LeftParent, tk);
         break;
     case ')':
-        Self.MakeSimple(TokenType::RightParent, tk);
+        MakeSimple(Type::RightParent, tk);
         break;
     case '{':
-        Self.MakeSimple(TokenType::LeftBrace, tk);
+        MakeSimple(Type::LeftBrace, tk);
         break;
     case '}':
-        Self.MakeSimple(TokenType::RightBrace, tk);
+        MakeSimple(Type::RightBrace, tk);
         break;
     case '[':
-        Self.MakeSimple(TokenType::LeftKey, tk);
+        MakeSimple(Type::LeftKey, tk);
         break;
     case ']':
-        Self.MakeSimple(TokenType::RightKey, tk);
+        MakeSimple(Type::RightKey, tk);
         break;
     case ';':
-        Self.MakeSimple(TokenType::Semicolon, tk);
+        MakeSimple(Type::Semicolon, tk);
         break;
     case ':':
-        Self.MakeSimple(TokenType::Colon, tk);
+        MakeSimple(Type::Colon, tk);
         break;
     case '=':
-        if(Self.GetOffset(1) == '=')
-            Self.MakeTwo(TokenType::Compare, tk);
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::Compare, tk);
         else
-            Self.MakeSimple(TokenType::Equal, tk);
+            MakeSimple(Type::Equal, tk);
         break;
     case '!':
-        if (Self.GetOffset(1) == '=')
-            Self.MakeTwo(TokenType::NotEqual, tk);
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::NotEqual, tk);
         else
-            Self.MakeSimple(TokenType::Not, tk);
+            MakeSimple(Type::Not, tk);
         break;
     case '<':
-        if (Self.GetOffset(1) == '=')
-            Self.MakeTwo(TokenType::LessEqual, tk);
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::LessEqual, tk);
+        else if (GetOffset(1) == '<') {
+            if (GetOffset(2) == '=')
+                MakeThree(Type::BinaryShlEqual, tk);
+            else
+                MakeTwo(Type::BinaryShl, tk);
+        }
         else
-            Self.MakeSimple(TokenType::Less, tk);
+            MakeSimple(Type::Less, tk);
         break;
     case '>':
-        if (Self.GetOffset(1) == '=')
-            Self.MakeTwo(TokenType::GreaterEqual, tk);
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::GreaterEqual, tk);
+        else if (GetOffset(1) == '>') {
+            if (GetOffset(2) == '=')
+                MakeThree(Type::BinaryShrEqual, tk);
+            else
+                MakeTwo(Type::BinaryShr, tk);
+        }
         else
-            Self.MakeSimple(TokenType::Greater, tk);
+            MakeSimple(Type::Greater, tk);
         break;
     case '+':
-        if (Self.GetOffset(1) == '=')
-            Self.MakeTwo(TokenType::PlusEqual, tk);
-        else if (Self.GetOffset(1) == '+')
-            Self.MakeTwo(TokenType::Inc, tk);
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::PlusEqual, tk);
+        else if (GetOffset(1) == '+')
+            MakeTwo(Type::Inc, tk);
         else
-            Self.MakeSimple(TokenType::Plus, tk);
+            MakeSimple(Type::Plus, tk);
         break;
     case '-':
-        if (Self.GetOffset(1) == '=')
-            Self.MakeTwo(TokenType::MinusEqual, tk);
-        else if (Self.GetOffset(1) == '-')
-            Self.MakeTwo(TokenType::Dec, tk);
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::MinusEqual, tk);
+        else if (GetOffset(1) == '-')
+            MakeTwo(Type::Dec, tk);
         else
-            Self.MakeSimple(TokenType::Minus, tk);
+            MakeSimple(Type::Minus, tk);
         break;
     case '*':
-        if (Self.GetOffset(1) == '=')
-            Self.MakeTwo(TokenType::StarEqual, tk);
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::StarEqual, tk);
         else
-            Self.MakeSimple(TokenType::Star, tk);
+            MakeSimple(Type::Star, tk);
         break;
     case '/':
-        if (Self.GetOffset(1) == '=')
-            Self.MakeTwo(TokenType::SlashEqual, tk);
-        else if (Self.GetOffset(1) == '/') {
-            while (Self.Current != '\n')
-                Self.Advance();
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::SlashEqual, tk);
+        else if (GetOffset(1) == '/') {
+            while (Current != '\n')
+                Advance();
             goto start;
         }
         else
-            Self.MakeSimple(TokenType::Slash, tk);
+            MakeSimple(Type::Slash, tk);
+        break;
+    case '&':
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::BinaryAndEqual, tk);
+        else
+            MakeSimple(Type::BinaryAnd, tk);
+        break;
+    case '|':
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::BinaryOrEqual, tk);
+        else
+            MakeSimple(Type::BinaryOr, tk);
+        break;
+    case '^':
+        if (GetOffset(1) == '=')
+            MakeTwo(Type::BinaryXOrEqual, tk);
+        else
+            MakeSimple(Type::BinaryXOr, tk);
+        break;
+    case '~':
+        MakeSimple(Type::BinaryNAND, tk);
         break;
     case '\"':
-        tk = Self.GetString();
+        tk = GetString();
         break;
     case '\'':
         break;
-    case '#':
-        Self.Advance(); // Skip # and get the id
-        tk = Self.GetIdentifier();
-        tk.Type = TokenType::CompilerAttribute;
-        break;
     case '\0':
-        Self.MakeSimple(TokenType::EndOfFile, tk);
+        MakeSimple(Type::EndOfFile, tk);
         break;
     default:
-        if (isalpha(Self.Current) || Self.Current == '_') {
-            tk = Self.GetIdentifier();
+        if (isalpha(Current) || Current == '_') {
+            tk = GetIdentifier();
         }
-        else if (isdigit(Self.Current)) {
-            tk = Self.GetDigit();
+        else if (isdigit(Current)) {
+            tk = GetDigit();
         }
         else {
-            Self.ErrorStream.Println(
-                STR("{s}:{u}: Error: Unexpected character {c}"), 
-                Self.FileName, Self.Line, Self.Current
+            fprintf(ErrorStream,
+                    "%s:%llu: Error: Unexpected character %c",
+                    FileName, Line, Current
             );
-            Self.IsPanicMode = true;
-            Self.Advance();
+            IsPanicMode = true;
+            Advance();
         }
         break;
     }

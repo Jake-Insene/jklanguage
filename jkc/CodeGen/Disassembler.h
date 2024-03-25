@@ -1,8 +1,9 @@
 #pragma once
-#include "jkc/Utility/File.h"
+#include <jkr/CoreTypes.h>
+#include <stdio.h>
 
 namespace CodeGen {
 
-bool Dis(StreamOutput& Output, Str FilePath);
+bool Dis(FILE*, const char* FilePath);
 
 }

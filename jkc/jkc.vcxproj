@@ -11,12 +11,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AST\Expresion.cpp" />
-    <ClCompile Include="AST\Statement.cpp" />
     <ClCompile Include="CodeGen\Disassembler.cpp" />
     <ClCompile Include="CodeGen\Emitter\EmitExpr.cpp" />
     <ClCompile Include="CodeGen\Emitter\EmitStat.cpp" />
-    <ClCompile Include="CodeGen\Emitter\Emitter.cpp" />
+    <ClCompile Include="CodeGen\Emitter\EmitterState.cpp" />
+    <ClInclude Include="CodeGen\Emitter\EmitExprMacros.h" />
     <ClCompile Include="CodeGen\Emitter\PreEmit.cpp" />
     <ClCompile Include="Compiler.cpp" />
     <ClCompile Include="Lexer\Lexer.cpp" />
@@ -26,9 +25,6 @@
   <ItemGroup>
     <ProjectReference Include="..\jkr\jkr.vcxproj">
       <Project>{800556a4-0bd0-4477-9d62-83cd16723dc7}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\stdjk\stdjk.vcxproj">
-      <Project>{5584b0c5-38f5-42f8-9fa8-3f3e25528655}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
@@ -43,15 +39,18 @@
     <ClInclude Include="AST\Utility.h" />
     <ClInclude Include="CodeGen\Assembler.h" />
     <ClInclude Include="CodeGen\Disassembler.h" />
-    <ClInclude Include="CodeGen\Emitter\Emitter.h" />
+    <ClInclude Include="CodeGen\Emitter\EmitExpr.h" />
+    <ClInclude Include="CodeGen\Emitter\EmitStat.h" />
+    <ClInclude Include="CodeGen\Emitter\EmitterState.h" />
+    <ClInclude Include="CodeGen\Emitter\PreEmit.h" />
+    <ClInclude Include="CodeGen\Function.h" />
     <ClInclude Include="CodeGen\SymbolTable.h" />
+    <ClInclude Include="CodeGen\Values.h" />
     <ClInclude Include="Compiler.h" />
     <ClInclude Include="Lexer\Lexer.h" />
     <ClInclude Include="Lexer\Token.h" />
     <ClInclude Include="Parser\Parser.h" />
-    <ClInclude Include="Utility\File.h" />
-    <ClInclude Include="Utility\Memory.h" />
-    <ClInclude Include="Utility\Slice.h" />
+    <ClInclude Include="CodeGen\CodeBuffer.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>

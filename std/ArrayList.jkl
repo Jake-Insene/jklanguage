@@ -1,0 +1,39 @@
+
+
+// JKL Low Level
+var buffer = new [1000H]Byte; // new is a implicit call to __new_handler(1000H, @typeAsNumber(Byte));
+var objectRef /*: &Object*/ = buffer.getRef(0); // Getting a reference from 0-7
+objectRef = Array();
+delete objectRef;
+
+// JKL Hight Level
+var initialData = {10, 20, 30};
+var array = ArrayList<Int>.fromArray(initialData);
+
+struct Array {
+	// The entry will be named Array_copy
+	#Native
+	fn copy(Dest: []Any, DestSize: UInt, Src: []Any, SrcSize: UInt);
+}
+
+struct ArrayList<T> {
+	Items: []T;
+	Capacity: USize;
+
+	fn fromArray(Array: []T) & {
+		var items = new [Array.length]T;
+		Array.copy(items, items.length, Array, Array.length);
+		return ArrayList<T>(
+			Items: items,
+			Capacity: items.length
+		);
+	}
+
+	fn destructor(Self) {
+		delete Self.Items;
+	}
+
+	fn add(Self, Value: T) {
+		Self.Items[Capacity++] = Value;
+	}
+}

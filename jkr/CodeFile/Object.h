@@ -1,5 +1,5 @@
 #pragma once
-#include "stdjk/CoreHeader.h"
+#include "jkr/CoreTypes.h"
 
 namespace codefile {
 

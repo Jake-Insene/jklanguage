@@ -1,27 +1,42 @@
 #pragma once
-#include <stdjk/List.h>
 #include "jkr/Runtime/Value.h"
 #include "jkr/CodeFile/Type.h"
+#include "jkr/CodeFile/Array.h"
 
 namespace runtime {
 
 struct Array {
-    codefile::PrimitiveType ItemType;
-    UInt32 ElementSize;
-    USize Size;
-    void* Items;
+    codefile::ArrayElement ElementType;
+    UInt16 ElementSize = 0;
+    USize Size = 0;
+    union {
+        Byte* Bytes = nullptr;
+        Int* Ints;
+        UInt* UInts;
+        Float* Floats;
+    };
 
-    static constexpr Array New(USize Size, UInt32 ElementSize) {
-        Array array = Array{
-            .Items = Cast<Value*>(mem::Allocate(ElementSize * Size)),
-        };
+    Array(USize Size, codefile::ArrayElement ElementType);
+    ~Array();
 
-        array.Size = Size;
-        array.ElementSize = ElementSize;
-        return array;
+    Array(Array&&) = default;
+    Array& operator=(Array&&) = default;
+
+    constexpr Byte& GetByte(USize Index) {
+        return Bytes[Index];
     }
 
-    void Destroy(this Array& Self);
+    constexpr Int& GetInt(USize Index) {
+        return Ints[Index];
+    }
+
+    constexpr UInt& GetUInt(USize Index) {
+        return UInts[Index];
+    }
+
+    constexpr Float& GetFloat(USize Index) {
+        return Floats[Index];
+    }
 };
 
 }

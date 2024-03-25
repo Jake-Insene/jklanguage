@@ -1,8 +1,7 @@
 #pragma once
-#include "stdjk/CoreHeader.h"
-#include <string>
+#include <jkr/String.h>
 
-enum class TokenType {
+enum class Type {
     Unknown = 0,
 
     Identifier,
@@ -29,7 +28,7 @@ enum class TokenType {
     TypeUInt,
     TypeFloat,
 
-    CompilerAttribute,
+    ExternAttr,
 
     Comma,
     Dot,
@@ -61,43 +60,31 @@ enum class TokenType {
     Slash,
     SlashEqual,
 
+    BinaryAnd,
+    BinaryAndEqual,
+    BinaryOr,
+    BinaryOrEqual,
+    BinaryXOr,
+    BinaryXOrEqual,
+    BinaryNAND,
+    BinaryShl,
+    BinaryShlEqual,
+    BinaryShr,
+    BinaryShrEqual,
+
     EndOfFile,
 };
 
-
-
-struct Attribute {
-    enum {
-        None = 0,
-        Native,
-        Export,
-        Import,
-    } Type = None;
-
-    union Value {
-        UInt N = 0;
-    } Arg;
-    std::u8string S;
-
-    static Attribute New() {
-        return Attribute();
-    }
-
-    constexpr void Destroy(this Attribute& Self) {
-        Self.S.~basic_string();
-    }
-};
-
 struct SourceLocation {
-    constexpr explicit SourceLocation() noexcept :
+    constexpr explicit SourceLocation() :
         FileName(nullptr), Line(0)
     {}
-    constexpr explicit SourceLocation(Str FileName, USize Line) noexcept :
+    constexpr explicit SourceLocation(const char* FileName, USize Line) :
         FileName(FileName), Line(Line) 
     {}
     constexpr ~SourceLocation() {}
 
-    Str FileName;
+    const char* FileName;
     USize Line;
 };
 
@@ -108,7 +95,8 @@ struct TokenValue {
     TokenValue(TokenValue&&) = default;
     TokenValue& operator=(TokenValue&&) = default;
 
-    std::u8string Str{};
+    String Str{};
+    StringView StrRef{};
     union {
         Int Signed = 0;
         UInt Unsigned;
@@ -118,16 +106,14 @@ struct TokenValue {
 
 struct Token {
     constexpr Token() {}
-    constexpr Token(TokenType Type, TokenValue&& Value, const SourceLocation& Location)
+    constexpr Token(Type Type, TokenValue&& Value, const SourceLocation& Location)
         : Type(Type), Value(std::move(Value)), Location(Location) {}
     constexpr ~Token() {}
 
-    Token(const Token&) = delete;
-    Token& operator=(const Token&) = delete;
     Token(Token&&) = default;
     Token& operator=(Token&&) = default;
 
-    TokenType Type{};
+    Type Type{};
     TokenValue Value{};
     SourceLocation Location{};
 };

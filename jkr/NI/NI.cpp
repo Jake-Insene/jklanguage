@@ -1,11 +1,10 @@
-#include "jkr/Runtime/Object.h"
-#include "jkr/NI/ThreadState.h"
 #include "jkr/NI/NI.h"
+#include "jkr/Runtime/Object.h"
 #include "jkr/Runtime/Assembly.h"
 #include "jkr/Runtime/VirtualMachine.h"
 
 extern "C" JK_API JKResult jkrLoadAssembly(JKString Path, JKAssembly * pAsm) {
-    runtime::Assembly* loadedAssembly = runtime::Assembly::FromFile(Cast<Str>(Path));
+    runtime::Assembly* loadedAssembly = new runtime::Assembly(Str(Path));
     if (loadedAssembly->Err != runtime::AsmOk) {
         if (loadedAssembly->Err == runtime::AsmCorruptFile) {
             return JK_CORRUPT_ASM;
@@ -23,26 +22,27 @@ extern "C" JK_API JKResult jkrLoadAssembly(JKString Path, JKAssembly * pAsm) {
 }
 
 extern "C" JK_API void jkrUnloadAssembly(JKAssembly Asm) {
-    runtime::Assembly* as = Cast<runtime::Assembly*>(Asm);
-    as->Destroy();
+    runtime::Assembly* as = reinterpret_cast<runtime::Assembly*>(Asm);
+    delete as;
 }
 
-extern "C" JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize, JKUInt LocalSize) {
-    runtime::VirtualMachine* vm = runtime::VirtualMachine::New(StackSize, LocalSize, nullptr);
+extern "C" JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize) {
+    runtime::VirtualMachine* vm = new runtime::VirtualMachine(StackSize, nullptr);
     
     *pVM = vm;
     return JK_OK;
 }
 
 extern "C" JK_API void jkrVMSetAssembly(JKVirtualMachine VM, JKAssembly Asm) {
-    runtime::VirtualMachine* vm = Cast<runtime::VirtualMachine*>(VM);
-    vm->Asm = Cast<runtime::Assembly*>(Asm);
+    runtime::VirtualMachine* vm = reinterpret_cast<runtime::VirtualMachine*>(VM);
+    vm->Asm = reinterpret_cast<runtime::Assembly*>(Asm);
+    vm->LinkageResolved = false;
 }
 
 JK_API JKResult jkrVMLink(JKVirtualMachine VM) {
-    runtime::VirtualMachine* vm = Cast<runtime::VirtualMachine*>(VM);
+    runtime::VirtualMachine* vm = reinterpret_cast<runtime::VirtualMachine*>(VM);
     vm->ResolveExtern();
-    if (vm->Err != runtime::VMSucess) {
+    if (vm->Err != runtime::VMSuccess) {
         if (vm->Err == runtime::VMLinkageError) {
             return JK_VM_LINKAGE_ERROR;
         }
@@ -51,10 +51,10 @@ JK_API JKResult jkrVMLink(JKVirtualMachine VM) {
     return JK_OK;
 }
 
-extern "C" JK_API JKResult jkrVMExecuteMain(JKVirtualMachine VM, JKValue* ExitValue) {
-    runtime::VirtualMachine* vm = Cast<runtime::VirtualMachine*>(VM);
-    ExitValue->U = vm->ExecMain().Unsigned;
-    if (vm->Err != runtime::VMSucess) {
+extern "C" JK_API JKResult jkrVMExecuteMain(JKVirtualMachine VM, JKInt* ExitValue) {
+    runtime::VirtualMachine* vm = reinterpret_cast<runtime::VirtualMachine*>(VM);
+    *ExitValue = vm->ExecMain();
+    if (vm->Err != runtime::VMSuccess) {
         if (vm->Err == runtime::VMLinkageError) {
             return JK_VM_LINKAGE_ERROR;
         }
@@ -64,23 +64,39 @@ extern "C" JK_API JKResult jkrVMExecuteMain(JKVirtualMachine VM, JKValue* ExitVa
 }
 
 extern "C" JK_API void jkrDestroyVM(JKVirtualMachine VM) {
-    runtime::VirtualMachine* vm = Cast<runtime::VirtualMachine*>(VM);
-    vm->Destroy();
+    runtime::VirtualMachine* vm = reinterpret_cast<runtime::VirtualMachine*>(VM);
+    delete vm;
 }
 
-extern "C" JK_API JKResult jkrCreateObject(JKThreadState State, JKUInt ObjectType, JKObject* pObject) {
+extern "C" JK_API JKResult jkrCreateObject(JKUInt ObjectType, JKObject* pObject) {
     return JKResult();
 }
 
-extern "C" JK_API JKResult jkrGetField(JKThreadState State, JKObject Object, JKByte Index, JKObject* pField) {
+extern "C" JK_API JKResult jkrGetField(JKObject Object, JKByte Index, JKObject* pField) {
     return JKResult();
 }
 
-extern "C" JK_API JKOpaque jkrArrayBytes(JKThreadState State, JKArray ArrayRef) {
-    runtime::Array* array = Cast<runtime::Array*>(ArrayRef);
-    return array->Items;
+extern "C" JK_API JKOpaque jkrArrayBytes(JKArray ArrayRef) {
+    runtime::Array* array = reinterpret_cast<runtime::Array*>(ArrayRef);
+    return array->Bytes;
 }
 
-extern "C" JK_API JKValue jkrArrayGet(JKThreadState State, JKArray ArrayRef, JKUInt Index) {
-    return JKValue();
+extern "C" JK_API JKByte jkrArrayGetByte(JKArray ArrayRef, JKUInt Index) {
+    runtime::Array* array = reinterpret_cast<runtime::Array*>(ArrayRef);
+    return array->GetByte(Index);
+}
+
+extern "C" JK_API JKInt jkrArrayGetInt(JKArray ArrayRef, JKUInt Index) {
+    runtime::Array* array = reinterpret_cast<runtime::Array*>(ArrayRef);
+    return array->GetInt(Index);
+}
+
+extern "C" JK_API JKUInt jkrArrayGetUInt(JKArray ArrayRef, JKUInt Index) {
+    runtime::Array* array = reinterpret_cast<runtime::Array*>(ArrayRef);
+    return array->GetUInt(Index);
+}
+
+extern "C" JK_API JKFloat jkrArrayGetFloat(JKArray ArrayRef, JKUInt Index) {
+    runtime::Array* array = reinterpret_cast<runtime::Array*>(ArrayRef);
+    return array->GetFloat(Index);
 }

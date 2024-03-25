@@ -1,17 +1,14 @@
 
+extern "jkl" fn write(Fd: UInt, Buff: const Byte[], Count: UInt);
+
 fn Fact(Num: Int) Int {
-    if(Num == 0) {
-        return 1;
-    }
-    else {
-        return Num * Fact(Num - 1);
-    }
+	if (Num == 0) {
+		return 1;
+	}
+	return Num * Fact(Num - 1);
 }
 
-#Native
-fn write(Fd: UInt, Buff: []const Byte, Count: UInt);
-
 fn Main() Int {
-    write(0U, "Hello World!\n", 15U);
-    return Fact(10);
+	//write(0U, "Hello!\n", 7U);
+	return Fact(10);
 }

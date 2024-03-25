@@ -2,11 +2,22 @@
 #include "jkc/Lexer/Lexer.h"
 #include "jkc/AST/Program.h"
 #include "jkc/AST/Type.h"
-#include <memory>
+
+enum AttributeType {
+    AttribNone = 0,
+    AttribPub = 0x1,
+    AttribPriv = 0x2,
+    AttribExtern = 0x4,
+    AttribImport = 0x8,
+    AttribExport = 0x10,
+};
+
+struct AttributeInfo {
+    UInt16 Attributes;
+    String Library;
+};
 
 struct Parser {
-    std::unique_ptr<int> a;
-
     enum class ParsePrecedence {
         None,
         Assignment,  // =
@@ -21,125 +32,89 @@ struct Parser {
         Primary
     };
 
-    static Parser New(StreamOutput& ErrorStream) {
-        return Parser{
-            .ErrorStream = ErrorStream,
-            .SourceLexer = Lexer::New(ErrorStream, nullptr, Slice<Char>()),
-        };
-    }
+    constexpr Parser(FILE* ErrorStream) :
+        ErrorStream(ErrorStream), SourceLexer(SourceLexer) {}
 
-    void Destroy(this Parser& Self) {
-        Self.SourceLexer.Destroy();
-    }
+    constexpr ~Parser() {}
 
-    AST::Program ParseContent(Str FileName, Slice<Char> Content);
+    AST::Program ParseContent(const char* FileName, const StringView& Content);
 
     constexpr bool Success() const { return !IsPanicMode; }
 
     constexpr bool IsType() const {
-        if (Current.Type == TokenType::TypeAny ||
-            Current.Type == TokenType::TypeVoid ||
-            Current.Type == TokenType::TypeByte ||
-            Current.Type == TokenType::TypeInt ||
-            Current.Type == TokenType::TypeUInt ||
-            Current.Type == TokenType::TypeFloat)
+        if (Current.Type == Type::TypeAny ||
+            Current.Type == Type::TypeVoid ||
+            Current.Type == Type::TypeByte ||
+            Current.Type == Type::TypeInt ||
+            Current.Type == Type::TypeUInt ||
+            Current.Type == Type::TypeFloat)
             return true;
 
         return false;
     }
 
     constexpr bool IsTypeAttrib() const {
-        if (Current.Type == TokenType::Const ||
-            Current.Type == TokenType::Star ||
-            Current.Type == TokenType::LeftKey)
+        if (Current.Type == Type::Const ||
+            Current.Type == Type::Star ||
+            Current.Type == Type::LeftKey)
             return true;
 
         return false;
     }
 
-    constexpr bool IsAttribute(Token& Tk) {
-        if (Tk.Value.Str == STR("native")) {
+    constexpr bool IsAttribute(Type& Tk) {
+        switch (Tk) {
+        case Type::ExternAttr:
             return true;
+        default:
+            break;
         }
 
         return false;
     }
 
-    constexpr void Advance() {
-        Last = std::move(Current);
-        Current = std::move(Next);
-        Next = SourceLexer.GetNext();
-
-        if (!SourceLexer.Success()) {
-            IsPanicMode = true;
-        }
-    }
-
+    void Advance();
     void ErrorAtCurrent(Str Format, ...);
+    bool Expected(Type Type, Str Format, ...);
+    void Syncronize();
 
-    constexpr bool Expected(TokenType Type, Str Format, ...) {
-        if (Current.Type != Type) {
-            IsPanicMode = true;
-            MustSyncronize = true;
-            
-            ErrorStream.Print(STR("{s}:{u}\n\tError: "), Current.Location.FileName, Current.Location.Line);
-            va_list args;
-            va_start(args, Format);
-            ErrorStream.PrintlnVa(Format, args);
-            va_end(args);
+    AST::TypeDecl                   ParseType();
 
-            return false;
-        }
-        Advance();
-        return true;
-    }
+    std::unique_ptr<AST::Expresion> ParseConstantValue(bool CanAssign, 
+                                                   std::unique_ptr<AST::Expresion>);
+    std::unique_ptr<AST::Expresion> ParseIdentifier(bool CanAssign, 
+                                                std::unique_ptr<AST::Expresion>);
+    std::unique_ptr<AST::Expresion> ParseGroup(bool CanAssign, 
+                                           std::unique_ptr<AST::Expresion>);
+    std::unique_ptr<AST::Expresion> ParseCall(bool CanAssign, 
+                                          std::unique_ptr<AST::Expresion> Left);
+    std::unique_ptr<AST::Expresion> ParseDot(bool CanAssign, 
+                                         std::unique_ptr<AST::Expresion> Left);
+    std::unique_ptr<AST::Expresion> ParseUnary(bool CanAssign, 
+                                           std::unique_ptr<AST::Expresion>);
+    std::unique_ptr<AST::Expresion> ParseBinaryOp(bool CanAssign, 
+                                              std::unique_ptr<AST::Expresion> Left);
+    std::unique_ptr<AST::Expresion> ParseArrayList(bool CanAssign, 
+                                               std::unique_ptr<AST::Expresion>);
+    std::unique_ptr<AST::Expresion> ParseArrayAccess(bool CanAssign, 
+                                                 std::unique_ptr<AST::Expresion>);
+    std::unique_ptr<AST::Expresion> ParseIncDec(bool CanAssign, 
+                                                std::unique_ptr<AST::Expresion>);
+    std::unique_ptr<AST::Expresion> ParseAssignment(bool CanAssign,
+                                                std::unique_ptr<AST::Expresion>);
 
-    constexpr void Syncronize() {
-        while (Current.Type != TokenType::EndOfFile) {
-            MustSyncronize = false;
+    std::unique_ptr<AST::Expresion> ParseExpresion(ParsePrecedence Precedence);
+    std::unique_ptr<AST::Block>     ParseBlock();
+    void                            ParseFunctionParameters(AST::Function& Function);
+    std::unique_ptr<AST::Statement> ParseFunction(const AttributeInfo& Attribs);
+    std::unique_ptr<AST::Statement> ParseReturn();
+    std::unique_ptr<AST::Statement> ParseConstVal();
+    std::unique_ptr<AST::Statement> ParseVar();
+    std::unique_ptr<AST::If>        ParseIf();
+    std::unique_ptr<AST::Statement> ParseExpresionStatement();
+    std::unique_ptr<AST::Statement> ParseStatement();
 
-            switch (Current.Type) {
-            case TokenType::Fn:
-                return;
-            case TokenType::Return:
-                if (Context.IsInFn) {
-                    return;
-                }
-                break;
-            case TokenType::Var:
-                return;
-            default:
-                break;
-            }
-         
-            Advance();
-        }
-    }
-
-    AST::TypeDecl            ParseType();
-
-    AST::Expresion* ParseConstantValue(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
-    AST::Expresion* ParseIdentifier(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
-    AST::Expresion* ParseGroup(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
-    AST::Expresion* ParseCall(List<Attribute> Attribs, bool CanAssign, AST::Expresion* Left);
-    AST::Expresion* ParseDot(List<Attribute> Attribs, bool CanAssign, AST::Expresion* Left);
-    AST::Expresion* ParseUnary(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
-    AST::Expresion* ParseBinaryOp(List<Attribute> Attribs, bool CanAssign, AST::Expresion* Left);
-    AST::Expresion* ParseArrayList(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
-    AST::Expresion* ParseArrayAccess(List<Attribute> Attribs, bool CanAssign, AST::Expresion*);
-
-    AST::Expresion* ParseExpresion(ParsePrecedence Precedence);
-    AST::Block*     ParseBlock(List<Attribute> Attribs);
-    void                     ParseFunctionParameters(AST::Function* Function);
-    AST::Statement* ParseFunction(List<Attribute> Attribs);
-    AST::Statement* ParseReturn(List<Attribute> Attribs);
-    AST::Statement* ParseConstVal(List<Attribute> Attribs);
-    AST::Statement* ParseVar(List<Attribute> Attribs);
-    AST::If*        ParseIf(List<Attribute> Attribs);
-    AST::Statement* ParseExpresionStatement(List<Attribute> Attribs);
-    AST::Statement* ParseStatement();
-
-    List<Attribute> ParseCompilerAttributes();
+    AttributeInfo ParseAttribs();
 
     struct {
         bool IsInFn = false;
@@ -147,7 +122,7 @@ struct Parser {
         UInt8 ReturnCount = 0;
     } Context;
 
-    StreamOutput& ErrorStream;
+    FILE* ErrorStream;
     
     Token Last{};
     Token Current{};

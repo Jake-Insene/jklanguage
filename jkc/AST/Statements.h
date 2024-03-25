@@ -1,9 +1,9 @@
 #pragma once
-
 #include "jkc/AST/Statement.h"
 #include "jkc/AST/Expresion.h"
 #include "jkc/AST/FunctionParameter.h"
-#include <string>
+#include <jkr/Vector.h>
+#include <memory>
 
 namespace AST {
 
@@ -12,43 +12,75 @@ struct If;
 struct Block;
 
 struct Function : Statement {
-    std::u8string Name;
+    constexpr Function(const SourceLocation& Location) :
+        Statement(StatementType::Function, Location) {}
+
+    constexpr ~Function() {}
+
+    String Name;
     TypeDecl FunctionType = TypeDecl();
-    List<FunctionParameter> Parameters = {};
+    Vector<FunctionParameter> Parameters = {};
     
     bool IsDefined = false;
     bool HasMultiReturn = false;
+    bool IsExtern = false;
+    String LibraryRef;
 
-    Block* Body = {};
+    std::unique_ptr<Block> Body = {};
 };
 
 struct Return : Statement {
-    Expresion* Value;
+    constexpr Return(const SourceLocation& Location) :
+        Statement(StatementType::Return, Location) {}
+
+    constexpr ~Return() {}
+
+    std::unique_ptr<Expresion> Value;
 };
 
 struct Var : Statement {
-    std::u8string Name;
+    constexpr Var(const SourceLocation& Location) :
+        Statement(StatementType::Var, Location) {}
+
+    constexpr ~Var() {}
+
+    String Name;
     TypeDecl VarType;
     bool IsDefined = false;
-    Expresion* Value;
+    std::unique_ptr<Expresion> Value;
 };
 
 struct ConstVal : Statement {
-    std::u8string Name;
+    constexpr ConstVal(const SourceLocation& Location) :
+        Statement(StatementType::ConstVal, Location) {}
+
+    constexpr ~ConstVal() {}
+
+    String Name;
     TypeDecl ConstType;
     bool IsDefined = false;
-    Expresion* Value;
+    std::unique_ptr<Expresion> Value;
 };
 
 struct If : Statement {
-    Expresion* Expr;
-    Block* Body;
-    If* Elif;
-    Block* ElseBlock;
+    constexpr If(const SourceLocation& Location) :
+        Statement(StatementType::If, Location) {}
+
+    constexpr ~If() {}
+
+    std::unique_ptr<Expresion> Expr;
+    std::unique_ptr<Block> Body;
+    std::unique_ptr<If> Elif;
+    std::unique_ptr<Block> ElseBlock;
 };
 
 struct ExpresionStatement : Statement {
-    Expresion* Value;
+    constexpr ExpresionStatement(const SourceLocation& Location) :
+        Statement(StatementType::ExpresionStatement, Location) {}
+
+    constexpr ~ExpresionStatement() {}
+
+    std::unique_ptr<Expresion> Value;
 };
 
 }

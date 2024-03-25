@@ -1,6 +1,5 @@
 #pragma once
-#include "stdjk/CoreHeader.h"
-
+#include "jkr/CoreTypes.h"
 #include <string>
 
 namespace AST {
@@ -21,7 +20,6 @@ public:
     enum TypeFlags {
         None,
         Const = 0b0001,
-        Ptr = 0b0010,
         Array = 0b0100,
     };
 
@@ -31,27 +29,58 @@ public:
             Type::Void,
             None,
             0,
+            0
+        };
+    }
+
+    [[nodiscard]] static constexpr TypeDecl Int() {
+        return TypeDecl{
+            Type::Int,
+            None,
             0,
             0
         };
     }
 
+    [[nodiscard]] static constexpr TypeDecl UInt() {
+        return TypeDecl{
+            Type::UInt,
+            None,
+            0,
+            0
+        };
+    }
+
+    [[nodiscard]] static constexpr TypeDecl Float() {
+        return TypeDecl{
+            Type::Float,
+            None,
+            0,
+            0
+        };
+    }
+
+    constexpr TypeDecl(Type Primitive, UInt32 SizeInBits, UInt8 Flags, UInt32 ArrayLen) :
+        Primitive(Primitive), SizeInBits(SizeInBits), Flags(Flags), ArrayLen(ArrayLen)
+    {}
+
+    constexpr TypeDecl() : Primitive(Type::Unknown), SizeInBits(0), Flags(0), ArrayLen(0) {}
+
     [[nodiscard]] constexpr bool Is(Type PrimitiveType) const { return Primitive == PrimitiveType; }
-    [[nodiscard]] constexpr bool IsUnknown() const { return Is(Type::Unknown) && Flags == 0; }
-    [[nodiscard]] constexpr bool IsVoid() const { return Is(Type::Void) && Flags == 0; }
-    [[nodiscard]] constexpr bool IsAny() const { return Is(Type::Any) && Flags == 0; }
-    [[nodiscard]] constexpr bool IsByte() const { return Is(Type::Byte) && Flags == 0; }
-    [[nodiscard]] constexpr bool IsInt() const { return Is(Type::Int) && Flags == 0; }
-    [[nodiscard]] constexpr bool IsUInt() const { return Is(Type::UInt) && Flags == 0; }
-    [[nodiscard]] constexpr bool IsFloat() const { return Is(Type::Float) && Flags == 0; }
+    [[nodiscard]] constexpr bool IsUnknown() const { return Is(Type::Unknown) && !HasArray(); }
+    [[nodiscard]] constexpr bool IsVoid() const { return Is(Type::Void) && !HasArray(); }
+    [[nodiscard]] constexpr bool IsAny() const { return Is(Type::Any) && !HasArray(); }
+    [[nodiscard]] constexpr bool IsByte() const { return Is(Type::Byte) && !HasArray(); }
+    [[nodiscard]] constexpr bool IsInt() const { return Is(Type::Int) && !HasArray(); }
+    [[nodiscard]] constexpr bool IsUInt() const { return Is(Type::UInt) && !HasArray(); }
+    [[nodiscard]] constexpr bool IsFloat() const { return Is(Type::Float) && !HasArray(); }
     [[nodiscard]] constexpr bool IsConstString() const { 
-        return Is(Type::Byte) && HasConst() && (HasPtr() || HasArray()) && PointerDeep < 2;
+        return Is(Type::Byte) && HasConst() && (HasArray());
     }
     [[nodiscard]] constexpr bool IsArray() const { return !Is(Type::Unknown) && Flags & (Array); }
 
     [[nodiscard]] constexpr bool HasFlag(TypeFlags TF) const { return Flags & TF; }
     [[nodiscard]] constexpr bool HasConst() const { return HasFlag(Const); }
-    [[nodiscard]] constexpr bool HasPtr() const { return HasFlag(Ptr); }
     [[nodiscard]] constexpr bool HasArray() const { return HasFlag(Array); }
 
     [[nodiscard]] constexpr bool IsNumeric() const { return IsByte() || IsInt() || IsUInt() || IsFloat(); }
@@ -64,13 +93,12 @@ public:
             flags &= 0b11111110;
         }
 
-        UInt8 rFlags = Flags;
+        UInt8 rFlags = RHS.Flags;
         if (rFlags & Const) {
             rFlags &= 0b11111110;
         }
         return Primitive == RHS.Primitive
             && flags == rFlags
-            && PointerDeep == RHS.PointerDeep
             && ArrayLen == RHS.ArrayLen;
     }
 
@@ -82,11 +110,6 @@ public:
             if (ArrayLen)
                 str += std::to_string(ArrayLen);
             str += "]";
-        }
-
-        if (Flags & Ptr) {
-            for (UInt8 i = 0; i < PointerDeep; i++)
-                str += "*";
         }
 
         if (Flags & Const) {
@@ -120,11 +143,10 @@ public:
         return str;
     }
 
-    Type Primitive = Type::Unknown;
-    UInt8 Flags = None;
-    UInt8 PointerDeep = 0;
-    UInt32 ArrayLen = 0;
-    UInt32 SizeInBits = 0;
+    Type Primitive;
+    UInt32 SizeInBits;
+    UInt8 Flags;
+    UInt32 ArrayLen;
 };
 
 }

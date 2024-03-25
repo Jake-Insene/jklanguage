@@ -2,101 +2,85 @@
 #include "jkc/Parser/Parser.h"
 #include "jkc/AST/Utility.h"
 #include "jkc/CodeGen/Disassembler.h"
-
 #include <fstream>
 
-static inline List<Char> ReadFileContent(StreamOutput &ErrorStream, Str FileName, bool& Success) {
-    io::File file = io::File::Open(FileName);
-    if (file.Err != io::FileError::Success)
-    {
-        ErrorStream.Println(STR("Error: can't open the file '{s}'"), FileName);
+static inline std::vector<Char> ReadFileContent(FILE* ErrorStream, const char* FileName, bool& Success) {
+    std::ifstream file{ FileName, std::ios::ate | std::ios::binary };
+    if (!file.is_open()) {
+        fprintf(ErrorStream, "Error: can't open the file '%s'\n", FileName);
         Success = false;
-        return List<Char>{
-            .Capacity = 0,
-            .Size = 0,
-            .Data = nullptr,
-        };
+        return std::vector<Char>{};
     }
 
-    size_t size = (size_t)(1 + file.Size());
-    List<Char> content{};
-    content.GrowCapacity(size);
-    file.Read((Byte*)content.Data, size);
-    content.Size = size;
+    size_t size = (size_t)(1 + file.tellg());
+    file.seekg(0);
+    std::vector<Char> content{};
+    content.resize(size);
+    file.read((char*)content.data(), size);
     content[size - 1] = '\0';
 
-    file.Close();
-
+    file.close();
     return content;
 }
 
-Compiler Compiler::New(StreamOutput& ErrorStream, const ProfileData& PD) {
-    return Compiler{
-        .ErrorStream = ErrorStream,
-        .Emitter = CodeGen::Emitter(ErrorStream),
-        .PD = PD,
-        .SourceParser = Parser::New(ErrorStream),
-    };
-}
+Compiler::Compiler(FILE* ErrorStream, const ProfileData& PD) :
+    ErrorStream(ErrorStream), Emitter(ErrorStream), PD(PD), SourceParser(ErrorStream) {}
 
-CompileResult Compiler::CompileFromSource(this Compiler& Self, Str FileName, CodeGen::EmitOptions Options) {
+Compiler::~Compiler() {}
+
+CompileResult Compiler::CompileFromSource(const char* FileName, CodeGen::EmitOptions Options) {
     bool success = true;
-    List<Char> content = ReadFileContent(Self.ErrorStream, FileName, success);
+    std::vector<Char> content = ReadFileContent(ErrorStream, FileName, success);
     if (!success)
         return CompileResult(false);
 
     // Parsing
-    Slice<Char> fileContent = Slice<Char>(content.Data, content.Size);
-    
-    Self.BeginAction(FileName, ActionType::Parsing, false);
-    AST::Program program = Self.SourceParser.ParseContent(FileName, fileContent);
-    content.Destroy();
-    Self.EndAction(FileName, ActionType::Parsing, !Self.SourceParser.Success());
+    StringView fileContent = StringView(content.data(), content.size());
 
-    if (!Self.SourceParser.Success()) {
+    BeginAction(FileName, ActionType::Parsing, false);
+    AST::Program program = SourceParser.ParseContent(FileName, fileContent);
+    EndAction(FileName, ActionType::Parsing, !SourceParser.Success());
+
+    if (!SourceParser.Success()) {
         return CompileResult(false);
     }
 
-    std::u8string outputFile = std::u8string(FileName);
+    String outputFile = (Str)FileName;
     outputFile = outputFile.substr(0, outputFile.find_last_of('.'));
-    outputFile += STR(".jk");
+    outputFile += u8".jk";
 
     // CodeGen
-    io::File file = io::File::Create(outputFile.c_str());
+    std::ofstream file{ (const char*)outputFile.c_str(), std::ios::binary};
 
-    Self.BeginAction(FileName, ActionType::CodeGen, false);
-    Self.Emitter.Emit(
-        program, 
+    BeginAction(FileName, ActionType::CodeGen, false);
+    Emitter.Emit(
+        program,
         CodeGen::FileType::Executable,
         Options,
         file
     );
-    Self.EndAction(FileName, ActionType::CodeGen, !Self.Emitter.Success);
+    EndAction(FileName, ActionType::CodeGen, !Emitter.Success);
 
-    program.Destroy();
-    if (!Self.Emitter.Success) {
+    if (!Emitter.Success) {
         return CompileResult(false);
     }
 
-    file.Close();
+    file.close();
 
     return CompileResult(true);
 }
 
-CompileResult Compiler::Disassembly(this Compiler& Self, Str FileName, StreamOutput& Output) {
+CompileResult Compiler::Disassembly(const char* FileName, FILE* Output) {
     bool success = true;
 
-    Self.BeginAction(FileName, ActionType::Disassembly, false);
+    BeginAction(FileName, ActionType::Disassembly, false);
     if (!CodeGen::Dis(Output, FileName)) {
         success = false;
     }
-    Self.EndAction(FileName, ActionType::Disassembly, false);
+    EndAction(FileName, ActionType::Disassembly, false);
 
     return CompileResult{
         .Success = success,
     };
 }
 
-void Compiler::Destroy(this Compiler& Self) {
-    Self.SourceParser.Destroy();
-}

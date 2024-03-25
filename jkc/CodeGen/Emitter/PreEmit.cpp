@@ -1,72 +1,58 @@
-#include "jkc/CodeGen/Emitter/Emitter.h"
+#include "jkc/CodeGen/Emitter/EmitterState.h"
+#include "jkc/CodeGen/Emitter/PreEmit.h"
 #include "jkc/AST/Statements.h"
 #include "jkc/AST/Expresions.h"
 
 namespace CodeGen {
 
-void Emitter::PreDeclareStatement(AST::Statement* Stat) {
-    if (Stat->Type == AST::StatementType::Function) {
-        PreDeclareFunction((AST::Function*)Stat);
-    }
-    else if (Stat->Type == AST::StatementType::Var) {
-        PreDeclareVar((AST::Var*)Stat);
-    }
-    else if (Stat->Type == AST::StatementType::ConstVal) {
-        PreDeclareConstVal((AST::ConstVal*)Stat);
+void PreEmit(EmitterState& State, AST::Program& Program) {
+    for (auto& stat : Program.Statements) {
+        PreDeclareStatement(State, stat.get());
     }
 }
 
-void Emitter::PreDeclareFunction(AST::Function* ASTFn) {
-    bool isNative = false;
-    for (auto& attr : ASTFn->Attribs) {
-        if (attr.Type == Attribute::Native)
-            isNative = true;
+void PreDeclareStatement(EmitterState& State, AST::Statement* Stat) {
+    if (Stat->Type == AST::StatementType::Function) {
+        PreDeclareFunction(State, (AST::Function*)Stat);
     }
+    else if (Stat->Type == AST::StatementType::Var) {
+        PreDeclareVar(State, (AST::Var*)Stat);
+    }
+    else if (Stat->Type == AST::StatementType::ConstVal) {
+        PreDeclareConstVal(State, (AST::ConstVal*)Stat);
+    }
+}
 
-    if (!ASTFn->IsDefined && !isNative)
+void PreDeclareFunction(EmitterState& State, AST::Function* ASTFn) {
+    if (!ASTFn->IsDefined && !ASTFn->IsExtern)
         return;
 
-    auto& fn = Functions.Emplace(ASTFn->Name);
+    auto& fn = State.Functions.Add(ASTFn->Name);
 
     fn.Name = ASTFn->Name.data();
-    fn.IsNative = isNative;
+    fn.IsExtern = ASTFn->IsExtern;
     fn.HasMultiReturn = ASTFn->HasMultiReturn;
 
-    for (auto& attrib : ASTFn->Attribs) {
-        if (attrib.Type == Attribute::Native) {
-            if (attrib.S.empty()) {
-                auto it = NativeLibraries.find(STR("jkl"));
-                if (it != NativeLibraries.end()) {
-                    fn.LibraryAddress = it->second;
-                }
-                else {
-                    Strings.Push(STR("jkl"), 4);
-                    fn.LibraryAddress = UInt32(Strings.Size - 1);
-                    NativeLibraries.emplace(STR("jkl"), fn.LibraryAddress);
-                }
-            }
-            else {
-                auto it = NativeLibraries.find(attrib.S);
-                if (it != NativeLibraries.end()) {
-                    fn.LibraryAddress = it->second;
-                }
-                else {
-                    Strings.Push(attrib.S.data(), attrib.S.size() + 1);
-                    fn.LibraryAddress = UInt32(Strings.Size - 1);
-                    NativeLibraries.emplace(STR("jkl"), fn.LibraryAddress);
-                }
-            }
-
-            Strings.Push(fn.Name, ASTFn->Name.size() + 1);
-            fn.EntryAddress = UInt32(Strings.Size - 1);
+    if (ASTFn->IsExtern) {
+        auto it = State.NativeLibraries.find(ASTFn->LibraryRef);
+        if (it != State.NativeLibraries.end()) {
+            fn.LibraryAddress = it->second;
         }
+        else {
+            StringTmp& str = State.Strings.emplace_back(ASTFn->LibraryRef.data(), ASTFn->LibraryRef.size());
+            fn.LibraryAddress = UInt16(State.Strings.size() - 1);
+            State.NativeLibraries.emplace(StringView(str.Data, str.Size), fn.LibraryAddress);
+        }
+
+        State.Strings.emplace_back(fn.Name, ASTFn->Name.size());
+        fn.EntryAddress = UInt16(State.Strings.size() - 1);
     }
 
-    if (isNative) {
+    if (ASTFn->IsExtern) {
         fn.CC = CallConv::Register;
-        for (Byte i = 0; i < ASTFn->Parameters.Size; i++) {
-            auto& local = fn.Locals.Emplace(ASTFn->Parameters[i].Name);
-            local.Name = ASTFn->Parameters[i].Name.c_str();
+        for (Byte i = 0; i < ASTFn->Parameters.size(); i++) {
+            auto& local = fn.Locals.Add(ASTFn->Parameters[i].Name);
+            local.Name = ASTFn->Parameters[i].Name.data();
             local.Type = ASTFn->Parameters[i].Type;
             local.IsInitialized = true;
 
@@ -75,10 +61,10 @@ void Emitter::PreDeclareFunction(AST::Function* ASTFn) {
             fn.RegisterArguments++;
         }
     }
-    else if (CurrentOptions.OptimizationLevel == OPTIMIZATION_NONE) {
+    else if (State.CurrentOptions.OptimizationLevel == OPTIMIZATION_NONE) {
         for (auto& param : ASTFn->Parameters) {
-            auto& local = fn.Locals.Emplace(param.Name);
-            local.Name = param.Name.c_str();
+            auto& local = fn.Locals.Add(param.Name);
+            local.Name = param.Name.data();
             local.Type = param.Type;
             local.IsInitialized = true;
             local.Index = fn.CountOfStackLocals++;
@@ -86,21 +72,21 @@ void Emitter::PreDeclareFunction(AST::Function* ASTFn) {
         }
     }
     else {
-        if (ASTFn->Parameters.Size == 0)
+        if (ASTFn->Parameters.size() == 0)
             fn.CC = CallConv::Register;
-        else if (ASTFn->Parameters.Size <= 10)
+        else if (ASTFn->Parameters.size() <= 10)
             fn.CC = CallConv::Register;
         else
             fn.CC = CallConv::RegS;
 
-        for (Byte i = 0; i < ASTFn->Parameters.Size; i++) {
-            auto& local = fn.Locals.Emplace(ASTFn->Parameters[i].Name);
-            local.Name = ASTFn->Parameters[i].Name.c_str();
+        for (Byte i = 0; i < ASTFn->Parameters.size(); i++) {
+            auto& local = fn.Locals.Add(ASTFn->Parameters[i].Name);
+            local.Name = ASTFn->Parameters[i].Name.data();
             local.Type = ASTFn->Parameters[i].Type;
             local.IsInitialized = true;
 
             if (i >= 10) {
-                fn.StackArguments = Byte(ASTFn->Parameters.Size - 10);
+                fn.StackArguments = Byte(ASTFn->Parameters.size() - 10);
                 local.Index = fn.CountOfStackLocals++;
             }
             else {
@@ -111,18 +97,19 @@ void Emitter::PreDeclareFunction(AST::Function* ASTFn) {
         }
     }
 
-    fn.CountOfArguments = Byte(ASTFn->Parameters.Size);
-    fn.Address = (UInt32)Functions.Size() - 1;
+    fn.CountOfArguments = Byte(ASTFn->Parameters.size());
+    fn.Address = (UInt32)State.Functions.Size() - 1;
     fn.Type = ASTFn->FunctionType;
     fn.IsDefined = ASTFn->IsDefined;
 }
 
-void Emitter::PreDeclareVar(AST::Var* Var) {
-    auto& global = Globals.Emplace(Var->Name);
+void PreDeclareVar(EmitterState& State, AST::Var* Var) {
+    auto& global = State.Globals.Add(Var->Name);
     global.Type = Var->VarType;
-    global.Index = UInt32(Globals.Size() - 1);
+    global.Index = UInt32(State.Globals.Size() - 1);
+    global.Name = Var->Name.data();
 }
 
-void Emitter::PreDeclareConstVal(AST::ConstVal* /*ConstVal*/) {}
+void PreDeclareConstVal(EmitterState& /*State*/, AST::ConstVal* /*ConstVal*/) {}
 
 }

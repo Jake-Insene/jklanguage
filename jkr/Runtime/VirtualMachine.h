@@ -6,31 +6,27 @@
 namespace runtime {
 
 enum VMError {
-    VMSucess = 0,
+    VMSuccess = 0,
     VMLinkageError = 1,
 };
 
 struct [[nodiscard]] VirtualMachine {
-    using LocalStack = List<Value, false>;
+    VirtualMachine(USize StackSize, Assembly* Asm);
+    ~VirtualMachine();
 
-    static VirtualMachine* New(USize StackSize, UInt LocalSize, Assembly* Asm);
-
-    Value ExecMain(this VirtualMachine& Self);
+    Int ExecMain();
     
-    void ResolveExtern(this VirtualMachine& Self);
+    void ResolveExtern();
 
-    bool TryLoad(this VirtualMachine& Self, Array& LibName, Library& Lib);
+    bool TryLoad(Array& LibName, USize& Lib);
 
-    Value ProcessCall(this VirtualMachine& Self, StackFrame& Frame, Function* Fn);
+    UInt ProcessCall(StackFrame& Frame, Function& Fn);
 
-    Value MainLoop(this VirtualMachine& Self, Function* Fn, StackFrame& Frame);
-
-    void Destroy(this VirtualMachine& Self);
+    UInt MainLoop(Function& Fn, StackFrame& Frame);
 
     Stack VMStack;
-    LocalStack Locals;
     Assembly* Asm;
-    List<Library> Libraries;
+    std::vector<Library> Libraries;
     VMError Err;
     bool LinkageResolved;
 };

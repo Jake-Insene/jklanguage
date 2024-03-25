@@ -1,138 +1,139 @@
 #include <jkc/Compiler.h>
 #include <jkr/NI/NI.h>
-#include <stdjk/Error.h>
+#include <jkr/Error.h>
+#include <jkr/Runtime/Value.h>
 #include <chrono>
 
 std::chrono::high_resolution_clock::time_point start;
 std::chrono::high_resolution_clock::time_point  end;
 
-constexpr JKUInt StackSize = (1028 * 64) / sizeof(JKValue);
-constexpr JKUInt LocalSize = (1028 * 1024) / sizeof(JKValue);
+// 1 mb for the stack
+constexpr JKUInt StackSize = (1024 * 1024) / sizeof(runtime::Value);
 
 static inline void PrintDuration() {
-    Str sufix = STR("ns");
+    const char* sufix = "ns";
     Int duration = (end - start).count();
 
     if (duration >= 1000) {
-        sufix = STR("mcs");
+        sufix = "mcs";
         duration = duration / 1'000;
-        if (duration >= 1000) {
-            sufix = STR("ms");
+        if (duration >= 1'000) {
+            sufix = "ms";
             duration = duration / 1'000;
-            if (duration >= 1000) {
-                sufix = STR("s");
-                duration = duration / 100;
+            if (duration >= 1'000) {
+                sufix = "s";
+                duration = duration / 1'000;
             }
         }
     }
 
-    io::Print(STR("{i}{s}"), duration, sufix);
+    printf("%lli%s", duration, sufix);
 }
 
-static inline void BeginAction(Str /*FileName*/, ActionType /*Type*/, bool /*Error*/) {
+static inline void BeginAction(const char* /*FileName*/, ActionType /*Type*/, bool /*Error*/) {
     start = std::chrono::high_resolution_clock::now();
 }
 
-static inline void EndAction(Str /*FileName*/, ActionType Type, bool Error) {
+static inline void EndAction(const char* /*FileName*/, ActionType Type, bool Error) {
     end = std::chrono::high_resolution_clock::now();
 
     if (!Error) {
         if (Type == ActionType::Parsing) {
-            io::Print(STR("[Parsing tooks "));
+            printf("[Parsing tooks ");
             PrintDuration();
-            io::Println(STR("]"));
+            printf("]\n");
         }
         else if (Type == ActionType::CodeGen) {
-            io::Print(STR("[CodeGen tooks "));
+            printf("[CodeGen tooks ");
             PrintDuration();
-            io::Println(STR("]"));
+            printf("]\n");
         }
         else if (Type == ActionType::Disassembly) {
-            io::Print(STR("[Disassembly tooks "));
+            printf("[Disassembly tooks ");
             PrintDuration();
-            io::Println(STR("]"));
+            printf("]\n");
         }
     }
 }
 
 int main() {
-    ProfileData pd = {
-        .BeginAction = BeginAction,
-        .EndAction = EndAction,
-    };
+    {
+        ProfileData pd = {
+            .BeginAction = BeginAction,
+            .EndAction = EndAction,
+        };
 
-    io::File err = io::GetStdout();
-    Compiler compiler = Compiler::New(err, pd);
+        Compiler compiler = Compiler(stderr, pd);
 
-    CodeGen::EmitOptions options = {
-        .Debug = CodeGen::DBG_NORMAL,
-        .OptimizationLevel = CodeGen::OPTIMIZATION_RELEASE_FAST,
-    };
+        CodeGen::EmitOptions options = {
+            .Debug = CodeGen::DBG_NORMAL,
+            .OptimizationLevel = CodeGen::OPTIMIZATION_RELEASE_FAST,
+        };
 
-    if (!compiler.CompileFromSource(STR("Examples/main.jkl"), options).Success) {
-        io::Println(STR("Compilation fail"));
-        error::Exit(UInt(-1));
+        if (!compiler.CompileFromSource("Examples/main.jkl", options).Success) {
+            puts("Compilation fail");
+            error::Exit(UInt(-1));
+        }
+
+        FILE* output = nullptr;
+        (void)fopen_s(&output, "Examples/main.jks", "wb");
+        if (output == nullptr) {
+            puts("Disassembly fail");
+            error::Exit(UInt(-1));
+        }
+
+        if (!compiler.Disassembly("Examples/main.jk", output).Success) {
+            puts("Disassembly fail");
+            error::Exit(UInt(-1));
+        }
+
+        fclose(output);
     }
-
-    io::File output = io::File::Create(STR("Examples/main.jks"));
-    if (output.Err != io::Success) {
-        io::Println(STR("Disassembly fail"));
-        error::Exit(UInt(-1));
-    }
-
-    if (!compiler.Disassembly(STR("Examples/main.jk"), output).Success) {
-        io::Println(STR("Disassembly fail"));
-        error::Exit(UInt(-1));
-    }
-
-    compiler.Destroy();
-    output.Close();
 
     JKResult result = JK_OK;
     JKAssembly as;
     result = jkrLoadAssembly(
-        JKString(STR("Examples/main.jk")),
+        JKString(u8"Examples/main.jk"),
         &as
     );
 
     if (result != JK_OK) {
-        io::Println(STR("Error loading the file"));
+        puts("Error loading the file");
         error::Exit(UInt(-1));
     }
 
     JKVirtualMachine vm = {};
     result = jkrCreateVM(
         &vm,
-        StackSize,
-        LocalSize
+        StackSize
     );
     jkrVMSetAssembly(vm, as);
 
     result = jkrVMLink(vm);
     if (result == JK_VM_LINKAGE_ERROR) {
-        io::Println(STR("VM: Linkage error"));
+        puts("VM: Linkage error");
         error::Exit(UInt(-1));
     }
 
     start = std::chrono::high_resolution_clock::now();
-    JKValue exitValue;
+    JKInt exitValue;
     result = jkrVMExecuteMain(vm, &exitValue);
     end = std::chrono::high_resolution_clock::now();
     if (result != JK_OK) {
         if (result == JK_VM_STACK_OVERFLOW) {
-            io::Println(STR("VM: Stack overflow"));
+            puts("VM: Stack overflow");
         }
         else {
-            io::Println(STR("VM Error"));
+            puts("VM Error");
         }
         error::Exit(UInt(-1));
     }
 
-    io::Print(STR("[Exectuion tooks "));
+    printf("[Exectuion tooks ");
     PrintDuration();
-    io::Println(STR("]"));
+    puts("]");
 
-    io::Println(STR("Program exit with code {u}"), exitValue.U);
+    printf("Program exit with code %llu\n", exitValue);
 
     jkrDestroyVM(vm);
     jkrUnloadAssembly(as);

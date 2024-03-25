@@ -1,0 +1,13 @@
+
+type USize = UInt;
+type ISize = Int;
+
+enum OS {
+	Unknown = 0,
+	Windows = 1,
+	Linux = 2,
+	MacOs = 3,
+}
+
+#External
+var Os: OS;

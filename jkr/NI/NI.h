@@ -16,7 +16,6 @@
 extern "C" {
 #endif //
 
-typedef struct _JKThreadState* JKThreadState;
 typedef unsigned char JKByte;
 typedef JKByte JKBool;
 typedef long long JKInt;
@@ -24,22 +23,11 @@ typedef unsigned long long JKUInt;
 typedef double JKFloat;
 typedef JKUInt JKObject;
 
-typedef union JKValue {
-    JKByte B;
-    JKInt I;
-    JKUInt U;
-    JKFloat F;
-    JKObject O;
-    void* P;
-} JKValue;
-
-typedef JKValue(*JKNativeFn)(JKThreadState, ...);
 typedef void* JKOpaque;
 typedef JKOpaque JKAssembly;
 typedef JKOpaque JKVirtualMachine;
 typedef JKByte* JKString;
 typedef JKOpaque JKArray;
-typedef JKOpaque JKDict;
 
 typedef enum {
     JK_OK,
@@ -60,25 +48,31 @@ JK_API void jkrUnloadAssembly(JKAssembly Asm);
 
 // Virtual Machine
 
-JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize, JKUInt LocalSize);
+JK_API JKResult jkrCreateVM(JKVirtualMachine* pVM, JKUInt StackSize);
 
 JK_API void jkrVMSetAssembly(JKVirtualMachine VM, JKAssembly Asm);
 
 JK_API JKResult jkrVMLink(JKVirtualMachine VM);
 
-JK_API JKResult jkrVMExecuteMain(JKVirtualMachine VM, JKValue* ExitValue);
+JK_API JKResult jkrVMExecuteMain(JKVirtualMachine VM, JKInt* ExitValue);
 
 JK_API void jkrDestroyVM(JKVirtualMachine VM);
 
 // Runtime
 
-JK_API JKResult jkrCreateObject(JKThreadState State, JKUInt ObjectType, JKObject* pObject);
+JK_API JKResult jkrCreateObject(JKUInt ObjectType, JKObject* pObject);
 
-JK_API JKResult jkrGetField(JKThreadState State, JKObject Object, JKByte Index, JKObject* pField);
+JK_API JKResult jkrGetField(JKObject Object, JKByte Index, JKObject* pField);
 
-JK_API JKOpaque jkrArrayBytes(JKThreadState State, JKArray ArrayRef);
+JK_API JKOpaque jkrArrayBytes(JKArray ArrayRef);
 
-JK_API JKValue jkrArrayGet(JKThreadState State, JKArray ArrayRef, JKUInt Index);
+JK_API JKByte jkrArrayGetByte(JKArray ArrayRef, JKUInt Index);
+
+JK_API JKInt jkrArrayGetInt(JKArray ArrayRef, JKUInt Index);
+
+JK_API JKUInt jkrArrayGetUInt(JKArray ArrayRef, JKUInt Index);
+
+JK_API JKFloat jkrArrayGetFloat(JKArray ArrayRef, JKUInt Index);
 
 #ifdef __cplusplus
 }

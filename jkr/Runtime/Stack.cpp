@@ -1,21 +1,16 @@
 #include "jkr/Runtime/Stack.h"
-#include "stdjk/Mem/Allocator.h"
+#include "jkr/Definitions.h"
+#include "jkr/Align.h"
 
 namespace runtime {
 
-Stack Stack::New(USize StackSize) {
-    Value* elements = Cast<Value*>(
-        mem::CountOf<Value>(StackSize)
-    );
-
-    return Stack{
-        .Size = StackSize,
-        .Start = elements,
-    };
+Stack::Stack(USize StackSize) :
+    Size(StackSize) {
+    Start = new Value[StackSize]{};
 }
 
-void Stack::Destroy(this Stack& Self) {
-    mem::Deallocate(Self.Start);
+Stack::~Stack() {
+    delete[] Start;
 }
 
 }

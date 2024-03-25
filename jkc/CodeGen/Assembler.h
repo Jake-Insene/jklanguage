@@ -1,467 +1,402 @@
 #pragma once
-#include "jkc/Utility/Memory.h"
-#include "jkc/Utility/Slice.h"
 #include "jkc/AST/Type.h"
+#include "jkc/CodeGen/CodeBuffer.h"
 #include "jkc/CodeGen/SymbolTable.h"
+#include "jkc/CodeGen/Function.h"
 #include <jkr/CodeFile/OpCodes.h>
-#include <jkr/CodeFile/Type.h>
+#include <jkr/CodeFile/Array.h>
 
 namespace CodeGen {
-
-struct Constant {
-    AST::TypeDecl Type = {};
-    union {
-        Int Signed = 0;
-        UInt Unsigned;
-        Float Real;
-        void* Array;
-    };
-};
-
-struct [[nodiscard]] Local {
-    Str Name = STR("");
-    AST::TypeDecl Type = {};
-    union {
-        Byte Index = 0;
-        Byte Reg;
-    };
-    bool IsInitialized = false;
-    bool IsRegister = false;
-};
-
-struct [[nodiscard]] Global {
-    Str Name = STR("");
-    AST::TypeDecl Type = {};
-    UInt32 Index = 0;
-    Constant Value;
-};
-
-enum class CallConv {
-    Stack,
-    // The maximum size of arguments is 10 and there are put bettwen the r1-r10 register
-    // And the return value if put in the r0 register
-    Register,
-    // The maximum size of arguments is 32, the first 10 arguments are putted bettwen the r1-r10 register
-    // and the rest are putted in the stack from right to left
-    // And the return value if put in the r0 register
-    RegS,
-};
-
-struct AddressToResolve {
-    // Pointer in code to the address to resolve,
-    // for now used for resolve jumps.
-    UInt32 IP; 
-};
-
-struct [[nodiscard]] Function {
-    Str Name = STR("");
-
-    AST::TypeDecl Type = {};
-    MemoryBuffer Code = {};
-
-    List<AddressToResolve, false> ResolveReturns;
-    SymbolTable<Local> Locals = {};
-    Byte CountOfArguments = 0;
-    Byte RegisterArguments = 0;
-    Byte StackArguments = 0;
-    Byte CountOfStackLocals = 0;
-    UInt32 Address = 0;
-
-    UInt32 LibraryAddress = 0;
-    UInt32 EntryAddress = 0;
-
-    bool IsDefined = false;
-    bool IsNative = false;
-    bool HasMultiReturn = false;
-    CallConv CC = CallConv::Stack;
-
-    [[nodiscard]] constexpr bool IsRegisterBased() const {
-        return CC == CallConv::Register || CC == CallConv::RegS;
-    }
-};
 
 struct Assembler {
     Assembler() {}
     ~Assembler() {}
 
-    constexpr void Brk(this Assembler& /*Self*/, Function& Fn) { Fn.Code << (Byte)codefile::OpCode::Brk; }
+    constexpr void Brk(Function& Fn) { Fn.Code << UInt32(codefile::OpCode::Brk); }
 
-    constexpr void CIL(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Src1, Byte Src2, Byte Extra = 0) {
-        Fn.Code << UInt16(Dest | (Src1 << 4) | (Src2 << 8) | (Extra<<12));
+    constexpr void LDR(Function& Fn, Byte Dest, Byte BT, UInt16 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Ldr);
+        Fn.Code << Byte(Dest | (BT << 4));
+        Fn.Code << Imm;
     }
 
-    constexpr void LocalSet4(this Assembler& /*Self*/, Function& Fn, Byte Src, Byte Idx) {
-        Fn.Code << (Byte)codefile::OpCode::LocalSet4;
-        Fn.Code << Byte(Src | (Idx << 4));
+    constexpr void STR(Function& Fn, Byte Src, Byte BT, UInt16 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Str);
+        Fn.Code << Byte(Src | (BT << 4));
+        Fn.Code << Imm;
     }
 
-    constexpr void LocalGet4(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Idx) {
-        Fn.Code << (Byte)codefile::OpCode::LocalGet4;
-        Fn.Code << Byte(Dest | (Idx << 4));
+    constexpr void SML(Function& Fn, codefile::OpCode I, Byte Dest, Byte Src1, Byte Src2) {
+        Fn.Code << Byte(I);
+        Fn.Code << Byte(Dest | (Src1 << 4));
+        Fn.Code << Src2;
     }
 
-    constexpr void LocalSet(this Assembler& /*Self*/, Function& Fn, Byte Src, Byte Idx) {
-        Fn.Code << (Byte)codefile::OpCode::LocalSet;
-        Fn.Code << Src;
-        Fn.Code << Idx;
+    constexpr void SML8(Function& Fn, codefile::OpCode I, Byte Dest, Byte Src1, UInt8 Imm) {
+        Fn.Code << Byte(I);
+        Fn.Code << Byte(Dest | (Src1 << 4));
+        Fn.Code << Imm;
+    }
+
+    constexpr void SML16(Function& Fn, codefile::OpCode I, Byte Dest, Byte Src1, UInt16 Imm) {
+        Fn.Code << Byte(I);
+        Fn.Code << Byte(Dest | (Src1 << 4));
+        Fn.Code << Imm;
+    }
+
+    constexpr void LocalSet(Function& Fn, Byte Src, Byte Offset) {
+        STR(Fn, Src, Byte(codefile::BaseFP), UInt32(Offset));
     }
     
-    constexpr void LocalGet(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Idx) {
-        Fn.Code << (Byte)codefile::OpCode::LocalGet;
-        Fn.Code << Dest;
-        Fn.Code << Idx;
+    constexpr void LocalGet(Function& Fn, Byte Dest, Byte Idx) {
+        LDR(Fn, Dest, Byte(codefile::BaseFP), UInt32(Idx));
     }
 
-    constexpr void GlobalSet(this Assembler& /*Self*/, Function& Fn, Byte Src, UInt32 Idx) {
-        Fn.Code << (Byte)codefile::OpCode::GlobalSet;
-        Fn.Code << Byte(Src | (Idx << 4));
+    constexpr void GlobalSet(Function& Fn, Byte Src, UInt16 Imm) {
+        STR(Fn, Src, Byte(codefile::BaseCS), Imm);
     }
 
-    constexpr void GlobalGet(this Assembler& /*Self*/, Function& Fn, Byte Dest, UInt32 Idx) {
-        Fn.Code << (Byte)codefile::OpCode::GlobalGet;
-        Fn.Code << Byte(Dest | (Idx << 4));
+    constexpr void GlobalGet(Function& Fn, Byte Dest, UInt16 Imm) {
+        LDR(Fn, Dest, codefile::BaseType::BaseCS, Imm);
     }
     
-    constexpr void Mov(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Src) {
-        Fn.Code << (Byte)codefile::OpCode::Mov;
-        Fn.Code << Byte(Dest | (Src<<4));
+    constexpr void Mov(Function& Fn, Byte Dest, Byte Src) {
+        Fn.Code << Byte(codefile::OpCode::Mov);
+        Fn.Code << Byte(Dest | (Src << 4));
     }
 
-    constexpr void Const4(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov4;
-        Fn.Code << (Byte)(Dest | (Const << 4));
+    constexpr void Mov4(Function& Fn, Byte Dest, Byte Imm) {
+        Fn.Code << Byte(codefile::OpCode::Mov4);
+        Fn.Code << Byte(Dest | (Imm<<4));
     }
 
-    constexpr void Const8(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov8;
+    constexpr void Mov8(Function& Fn, Byte Dest, Byte Imm) {
+        Fn.Code << Byte(codefile::OpCode::Mov8);
+        Fn.Code << Byte(Dest | 0b00000000);
+        Fn.Code << Imm;
+    }
+
+    constexpr void Mov16(Function& Fn, Byte Dest, UInt16 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Mov16);
+        Fn.Code << Byte(Dest | 0b00000000);
+        Fn.Code << Imm;
+    }
+
+    constexpr void Mov32(Function& Fn, Byte Dest, UInt32 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Mov32);
+        Fn.Code << Byte(Dest | 0b00000000);
+        Fn.Code << Imm;
+    }
+
+    constexpr void Mov64(Function& Fn, Byte Dest, UInt64 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Mov64);
         Fn.Code << Dest;
-        Fn.Code << Const;
+        Fn.Code << Imm;
     }
 
-    constexpr void Const16(this Assembler& /*Self*/, Function& Fn, Byte Dest, UInt16 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov16;
+    constexpr void Ldsr(Function& Fn, Byte Dest, UInt32 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Ldstr);
         Fn.Code << Dest;
-        Fn.Code << Const;
+        Fn.Code << Imm;
     }
 
-    constexpr void Const32(this Assembler& /*Self*/, Function& Fn, Byte Dest, UInt32 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov32;
-        Fn.Code << Dest;
-        Fn.Code << Const;
+    constexpr void Cmp(Function& Fn, Byte Src1, Byte Src2) {
+        Fn.Code << Byte(codefile::OpCode::Cmp);
+        Fn.Code << Byte(Src1 | (Src2 << 4));
     }
 
-    constexpr void Const64(this Assembler& /*Self*/, Function& Fn, Byte Dest, UInt64 Const) {
-        Fn.Code << (Byte)codefile::OpCode::Mov64;
-        Fn.Code << Dest;
-        Fn.Code << Const;
+    constexpr void FCmp(Function& Fn, Byte Src1, Byte Src2) {
+        Fn.Code << Byte(codefile::OpCode::FCmp);
+        Fn.Code << Byte(Src1 | (Src2 << 4));
     }
 
-    constexpr void MovRes(this Assembler& /*Self*/, Function& Fn, Byte Dest) {
-        Fn.Code << (Byte)codefile::OpCode::MovRes;
-        Fn.Code << Dest;
-    }
-
-    constexpr void Inc(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
-        Fn.Code << (Byte)codefile::OpCode::Inc;
-        Fn.Code << Byte(Reg | 0b00010000);
-    }
-
-    constexpr void IInc(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
-        Fn.Code << (Byte)codefile::OpCode::Inc;
-        Fn.Code << Reg;
-    }
-
-    constexpr void FInc(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
-        Fn.Code << (Byte)codefile::OpCode::Inc;
-        Fn.Code << Byte(Reg | 0b00100000);
-    }
-
-    constexpr void Dec(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
-        Fn.Code << (Byte)codefile::OpCode::Dec;
-        Fn.Code << Byte(Reg | 0b00010000);
-    }
-
-    constexpr void IDec(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
-        Fn.Code << (Byte)codefile::OpCode::Dec;
-        Fn.Code << Reg;
-    }
-
-    constexpr void FDec(this Assembler& /*Self*/, Function& Fn, Byte Reg) {
-        Fn.Code << (Byte)codefile::OpCode::Dec;
-        Fn.Code << Byte(Reg | 0b00100000);
-    }
-
-    constexpr void Add(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::Add;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void Add8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
-        Fn.Code << (Byte)codefile::OpCode::Add8;
-        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
-    }
-
-    constexpr void Add16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
-        Fn.Code << (Byte)codefile::OpCode::Add16;
-        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
-        Fn.Code << Byte(Constant >> 8);
-    }
-
-    constexpr void IAdd(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::IAdd;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void IAdd8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
-        Fn.Code << (Byte)codefile::OpCode::IAdd8;
-        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
-    }
-
-    constexpr void IAdd16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
-        Fn.Code << (Byte)codefile::OpCode::IAdd16;
-        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
-        Fn.Code << Byte(Constant >> 8);
-    }
-
-    constexpr void FAdd(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::FAdd;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void Sub(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::Sub;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void Sub8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
-        Fn.Code << (Byte)codefile::OpCode::Sub8;
-        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
-    }
-
-    constexpr void Sub16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
-        Fn.Code << (Byte)codefile::OpCode::Sub16;
-        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
-        Fn.Code << Byte(Constant >> 8);
-    }
-
-    constexpr void ISub(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::ISub;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void ISub8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
-        Fn.Code << (Byte)codefile::OpCode::ISub8;
-        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
-    }
-
-    constexpr void ISub16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
-        Fn.Code << (Byte)codefile::OpCode::ISub16;
-        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
-        Fn.Code << Byte(Constant >> 8);
-    }
-
-    constexpr void FSub(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::FSub;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void Mul(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::Mul;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void Mul8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
-        Fn.Code << (Byte)codefile::OpCode::Mul8;
-        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
-    }
-
-    constexpr void Mul16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
-        Fn.Code << (Byte)codefile::OpCode::Mul16;
-        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
-        Fn.Code << Byte(Constant >> 8);
-    }
-
-    constexpr void IMul(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::IMul;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void IMul8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
-        Fn.Code << (Byte)codefile::OpCode::IMul8;
-        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
-    }
-
-    constexpr void IMul16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
-        Fn.Code << (Byte)codefile::OpCode::IMul16;
-        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
-        Fn.Code << Byte(Constant >> 8);
-    }
-
-    constexpr void FMul(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::FMul;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void Div(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::Div;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void Div8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
-        Fn.Code << (Byte)codefile::OpCode::Div8;
-        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
-    }
-
-    constexpr void Div16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
-        Fn.Code << (Byte)codefile::OpCode::Div16;
-        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
-        Fn.Code << Byte(Constant >> 8);
-    }
-
-    constexpr void IDiv(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::IDiv;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void IDiv8(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Constant) {
-        Fn.Code << (Byte)codefile::OpCode::IDiv16;
-        Self.CIL(Fn, Dest, Src1, Constant & 0xF, Constant >> 4);
-    }
-
-    constexpr void IDiv16(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, UInt16 Constant) {
-        Fn.Code << (Byte)codefile::OpCode::IDiv16;
-        Self.CIL(Fn, Dest, Src1, Byte(Constant & 0xF), Byte(Constant >> 4));
-        Fn.Code << Byte(Constant >> 8);
-    }
-
-    constexpr void FDiv(this Assembler& Self, Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
-        Fn.Code << (Byte)codefile::OpCode::FDiv;
-        Self.CIL(Fn, Dest, Src1, Src2);
-    }
-
-    constexpr void Cmp(this Assembler& /*Self*/, Function& Fn, Byte L, Byte R) {
-        Fn.Code << (Byte)codefile::OpCode::Cmp;
-        Fn.Code << (Byte)(L | (R << 4));
-    }
-
-    constexpr void ICmp(this Assembler& /*Self*/, Function& Fn, Byte L, Byte R) {
-        Fn.Code << (Byte)codefile::OpCode::ICmp;
-        Fn.Code << (Byte)(L | (R << 4));
-    }
-
-    constexpr void FCmp(this Assembler& /*Self*/, Function& Fn, Byte L, Byte R) {
-        Fn.Code << (Byte)codefile::OpCode::FCmp;
-        Fn.Code << (Byte)(L | (R << 4));
-    }
-
-    constexpr void TestZ(this Assembler& /*Self*/, Function& Fn, Byte R) {
-        Fn.Code << (Byte)codefile::OpCode::TestZ;
+    constexpr void TestZ(Function& Fn, Byte R) {
+        Fn.Code << Byte(codefile::OpCode::TestZ);
         Fn.Code << R;
     }
 
-    constexpr void Jmp(this Assembler& /*Self*/, Function& Fn, codefile::OpCode JmpType, 
-                       UInt16 Address) {
-        Fn.Code << (Byte)JmpType;
-        Fn.Code << Address;
+    constexpr void Jmp(Function& Fn, codefile::OpCode OpCode, UInt16 Imm) {
+        Fn.Code << Byte(OpCode);
+        Fn.Code << Imm;
     }
 
-    constexpr void Jmp8(this Assembler& /*Self*/, Function& Fn, codefile::OpCode JmpType, Byte Address) {
-        Fn.Code << (Byte)JmpType;
-        Fn.Code << Address;
+    constexpr void Call(Function& Fn, UInt32 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Call);
+        Fn.Code << Imm;
     }
 
-    constexpr void Call(this Assembler& /*Self*/, Function& Fn, UInt32 Index) {
-        Fn.Code << (Byte)codefile::OpCode::Call;
-        Fn.Code << Index;
+    constexpr void Ret(Function& Fn) {
+        Fn.Code << Byte(codefile::OpCode::Ret);
     }
 
-    constexpr void Call8(this Assembler& /*Self*/, Function& Fn, Byte Index) {
-        Fn.Code << (Byte)codefile::OpCode::Call8;
-        Fn.Code << Index;
+    constexpr void RetC(Function& Fn, UInt32 Code) {
+        Fn.Code << Byte(codefile::OpCode::RetC);
+        Fn.Code << Code;
     }
 
-    constexpr void Ret(this Assembler& /*Self*/, Function& Fn) {
-        Fn.Code << (Byte)codefile::OpCode::Ret;
+    constexpr void Inc(Function& Fn, Byte Reg) {
+        Fn.Code << Byte(codefile::OpCode::Inc);
+        Fn.Code << Reg;
     }
 
-    constexpr void ArrayNew(this Assembler& /*Self*/, Function& Fn, Byte Dest, Byte SizeInReg, codefile::PrimitiveType Type) {
-        Fn.Code << (Byte)codefile::OpCode::ArrayNew;
-        Fn.Code << Byte(Dest | (SizeInReg << 4));
-        Fn.Code << Byte(Type);
+    constexpr void IInc(Function& Fn, Byte Reg) {
+        Fn.Code << Byte(codefile::OpCode::IInc);
+        Fn.Code << Reg;
     }
 
-    constexpr void ArrayLen(this Assembler& /*Self*/, Function& Fn, Byte ArrayInReg, Byte Dest) {
-        Fn.Code << (Byte)codefile::OpCode::ArrayLen;
+    constexpr void FInc(Function& Fn, Byte Reg) {
+        Fn.Code << Byte(codefile::OpCode::FInc);
+        Fn.Code << Reg;
+    }
+
+    constexpr void Dec(Function& Fn, Byte Reg) {
+        Fn.Code << Byte(codefile::OpCode::Dec);
+        Fn.Code << Reg;
+    }
+
+    constexpr void IDec(Function& Fn, Byte Reg) {
+        Fn.Code << Byte(codefile::OpCode::IDec);
+        Fn.Code << Reg;
+    }
+
+    constexpr void FDec(Function& Fn, Byte Reg) {
+        Fn.Code << Byte(codefile::OpCode::FDec);
+        Fn.Code << Reg;
+    }
+
+    constexpr void Add(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::Add, Dest, Src1, Src2);
+    }
+
+    constexpr void Sub(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::Sub, Dest, Src1, Src2);
+    }
+
+    constexpr void Mul(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::Mul, Dest, Src1, Src2);
+    }
+
+    constexpr void Div(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::Div, Dest, Src1, Src2);
+    }
+
+    constexpr void IAdd(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::IAdd, Dest, Src1, Src2);
+    }
+
+    constexpr void ISub(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::ISub, Dest, Src1, Src2);
+    }
+
+    constexpr void IMul(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::IMul, Dest, Src1, Src2);
+    }
+
+    constexpr void IDiv(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::IDiv, Dest, Src1, Src2);
+    }
+
+    constexpr void FAdd(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::FAdd, Dest, Src1, Src2);
+    }
+
+    constexpr void FSub(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::FSub, Dest, Src1, Src2);
+    }
+
+    constexpr void FMul(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::FMul, Dest, Src1, Src2);
+    }
+
+    constexpr void FDiv(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::FDiv, Dest, Src1, Src2);
+    }
+
+    constexpr void Add8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::Add8, Dest, Src1, Imm);
+    }
+
+    constexpr void Sub8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::Sub8, Dest, Src1, Imm);
+    }
+
+    constexpr void Mul8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::Mul8, Dest, Src1, Imm);
+    }
+
+    constexpr void Div8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::Div8, Dest, Src1, Imm);
+    }
+
+    constexpr void IAdd8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::IAdd8, Dest, Src1, Imm);
+    }
+
+    constexpr void ISub8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::ISub8, Dest, Src1, Imm);
+    }
+
+    constexpr void IMul8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::IMul8, Dest, Src1, Imm);
+    }
+
+    constexpr void IDiv8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::IDiv8, Dest, Src1, Imm);
+    }
+
+    constexpr void Add16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::Add16, Dest, Src1, Imm);
+    }
+
+    constexpr void Sub16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::Sub16, Dest, Src1, Imm);
+    }
+
+    constexpr void Mul16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::Mul16, Dest, Src1, Imm);
+    }
+
+    constexpr void Div16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::Div16, Dest, Src1, Imm);
+    }
+
+    constexpr void IAdd16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::IAdd16, Dest, Src1, Imm);
+    }
+
+    constexpr void ISub16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::ISub16, Dest, Src1, Imm);
+    }
+
+    constexpr void IMul16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::IMul16, Dest, Src1, Imm);
+    }
+
+    constexpr void IDiv16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::IDiv16, Dest, Src1, Imm);
+    }
+
+    constexpr void Or(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::Or, Dest, Src1, Src2);
+    }
+
+    constexpr void And(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::And, Dest, Src1, Src2);
+    }
+
+    constexpr void XOr(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::XOr, Dest, Src1, Src2);
+    }
+
+    constexpr void Shl(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::Shl, Dest, Src1, Src2);
+    }
+
+    constexpr void Shr(Function& Fn, Byte Dest, Byte Src1, Byte Src2) {
+        SML(Fn, codefile::OpCode::Shr, Dest, Src1, Src2);
+    }
+
+    constexpr void Or8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::Or8, Dest, Src1, Imm);
+    }
+
+    constexpr void And8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::And8, Dest, Src1, Imm);
+    }
+
+    constexpr void XOr8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::XOr8, Dest, Src1, Imm);
+    }
+
+    constexpr void Shl8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::Shl8, Dest, Src1, Imm);
+    }
+
+    constexpr void Shr8(Function& Fn, Byte Dest, Byte Src1, Byte Imm) {
+        SML8(Fn, codefile::OpCode::Shr8, Dest, Src1, Imm);
+    }
+
+    constexpr void Or16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::Or16, Dest, Src1, Imm);
+    }
+
+    constexpr void And16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::And16, Dest, Src1, Imm);
+    }
+
+    constexpr void XOr16(Function& Fn, Byte Dest, Byte Src1, UInt16 Imm) {
+        SML16(Fn, codefile::OpCode::XOr16, Dest, Src1, Imm);
+    }
+
+    constexpr void Not(Function& Fn, Byte SrcDest) {
+        Fn.Code << Byte(codefile::OpCode::Not);
+        Fn.Code << SrcDest;
+    }
+
+    constexpr void Neg(Function& Fn, Byte SrcDest) {
+        Fn.Code << Byte(codefile::OpCode::Neg);
+        Fn.Code << SrcDest;
+    }
+
+    constexpr void Push8(Function& Fn, UInt8 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Push8);
+        Fn.Code << Imm;
+    }
+
+    constexpr void Push16(Function& Fn, UInt16 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Push16);
+        Fn.Code << Imm;
+    }
+
+    constexpr void Push32(Function& Fn, UInt32 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Push32);
+        Fn.Code << Imm;
+    }
+
+    constexpr void Push64(Function& Fn, UInt64 Imm) {
+        Fn.Code << Byte(codefile::OpCode::Push64);
+        Fn.Code << Imm;
+    }
+
+    constexpr void PopTop(Function& Fn) {
+        Fn.Code << Byte(codefile::OpCode::Popd);
+    }
+    
+    constexpr void Push(Function& Fn, Byte Src) {
+        Fn.Code << Byte(codefile::OpCode::Push);
+        Fn.Code << Src;
+    }
+
+    constexpr void Pop(Function& Fn, Byte Dest) {
+        Fn.Code << Byte(codefile::OpCode::Pop);
+        Fn.Code << Dest;
+    }
+
+    constexpr void ArrayNew(Function& Fn, Byte Dest, codefile::ArrayElement ET) {
+        Fn.Code << Byte(codefile::OpCode::ArrayNew);
+        Fn.Code << Byte(Dest | (ET<<4));
+    }
+
+    constexpr void ArrayLen(Function& Fn, Byte ArrayInReg, Byte Dest) {
+        Fn.Code << Byte(codefile::OpCode::ArrayL);
         Fn.Code << Byte(ArrayInReg | (Dest << 4));
     }
 
-    constexpr void ArraySet(this Assembler& /*Self*/, Function& Fn, Byte ArrayInReg, Byte IndexInReg, Byte SrcInReg) {
-        Fn.Code << (Byte)codefile::OpCode::ArraySet;
-        Fn.Code << Byte(ArrayInReg | (IndexInReg << 4));
-        Fn.Code << SrcInReg;
-    }
-
-    constexpr void ArrayGet(this Assembler& /*Self*/, Function& Fn, Byte ArrayInReg, Byte IndexInReg, Byte Dest) {
-        Fn.Code << (Byte)codefile::OpCode::ArrayGet;
+    constexpr void ArrayLoad(Function& Fn, Byte ArrayInReg, Byte IndexInReg, Byte Dest) {
+        Fn.Code << Byte(codefile::OpCode::ArrayLoad);
         Fn.Code << Byte(ArrayInReg | (IndexInReg << 4));
         Fn.Code << Dest;
     }
 
-    constexpr void ArrayDestroy(this Assembler& /*Self*/, Function& Fn, Byte Src) {
-        Fn.Code << (Byte)codefile::OpCode::ArrayDestroy;
+    constexpr void ArrayStr(Function& Fn, Byte ArrayInReg, Byte IndexInReg, Byte Src) {
+        Fn.Code << Byte(codefile::OpCode::ArrayStore);
+        Fn.Code << Byte(ArrayInReg | (IndexInReg << 4));
         Fn.Code << Src;
     }
 
-    constexpr void StringGet4(this Assembler& /*Self*/, Function& Fn, Byte Reg, Byte S) {
-        Fn.Code << (Byte)codefile::OpCode::StringGet4;
-        Fn.Code << Byte(Reg | (S << 4));
-    }
-
-    constexpr void StringGet(this Assembler& /*Self*/, Function& Fn, Byte Reg, UInt32 S) {
-        Fn.Code << (Byte)codefile::OpCode::StringGet;
-        Fn.Code << Byte(Reg | (S<<4));
-    }
-
-    constexpr void Push8(this Assembler& /*Self*/, Function& Fn, Byte C) {
-        Fn.Code << (Byte)codefile::OpCode::Push8;
-        Fn.Code << C;
-    }
-
-    constexpr void Push16(this Assembler& /*Self*/, Function& Fn, UInt16 C) {
-        Fn.Code << (Byte)codefile::OpCode::Push16;
-        Fn.Code << C;
-    }
-
-    constexpr void Push32(this Assembler& /*Self*/, Function& Fn, UInt32 C) {
-        Fn.Code << (Byte)codefile::OpCode::Push32;
-        Fn.Code << C;
-    }
-
-    constexpr void Push64(this Assembler& /*Self*/, Function& Fn, UInt64 C) {
-        Fn.Code << (Byte)codefile::OpCode::Push64;
-        Fn.Code << C;
-    }
-
-    constexpr void PopTop(this Assembler& /*Self*/, Function& Fn) {
-        Fn.Code << (Byte)codefile::OpCode::PopTop;
-    }
-    
-    constexpr void Push(this Assembler& /*Self*/, Function& Fn, Byte Src) {
-        Fn.Code << Byte(Byte(codefile::OpCode::PushR0) + Src);
-    }
-
-    constexpr void Pop(this Assembler& /*Self*/, Function& Fn, Byte Dest) {
-        Fn.Code << Byte(Byte(codefile::OpCode::PopR0) + Dest);
-    }
-
-    constexpr void PushLocal(this Assembler& /*Self*/, Function& Fn, Byte Src) {
-        Fn.Code << Byte(codefile::OpCode::PushLocal);
+    constexpr void ArrayDestroy(Function& Fn, Byte Src) {
+        Fn.Code << Byte(codefile::OpCode::ArrayDestroy);
         Fn.Code << Src;
-    }
-
-    constexpr void PopLocal(this Assembler& /*Self*/, Function& Fn, Byte Dest) {
-        Fn.Code << Byte(codefile::OpCode::PopLocal);
-        Fn.Code << Dest;
     }
 
 };

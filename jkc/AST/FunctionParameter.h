@@ -1,20 +1,15 @@
 #pragma once
 #include "jkc/AST/Type.h"
-
-#include <string>
+#include <jkr/String.h>
 
 namespace AST {
 
 struct FunctionParameter {
-    static constexpr FunctionParameter New() {
-        return FunctionParameter{};
-    }
+    constexpr FunctionParameter() {}
 
-    constexpr void Destroy(this FunctionParameter& Self) {
-        Self.Name.~basic_string();
-    }
+    constexpr ~FunctionParameter() {}
 
-    std::u8string Name;
+    StringView Name;
     TypeDecl Type;
 };
 

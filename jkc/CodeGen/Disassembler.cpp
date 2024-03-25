@@ -4,993 +4,563 @@
 #include <jkr/CodeFile/Data.h>
 #include <jkr/CodeFile/OpCodes.h>
 #include <jkr/CodeFile/Type.h>
-#include <stdjk/Mem/Utility.h>
-#include <stdjk/String.h>
-#include <malloc.h>
+#include <jkr/String.h>
+#include <fstream>
 
 namespace CodeGen {
 
-Str Registers[] = {
-	STR("r0"),
-	STR("r1"),
-	STR("r2"),
-	STR("r3"),
-	STR("r4"),
-	STR("r5"),
-	STR("r6"),
-	STR("r7"),
-	STR("r8"),
-	STR("r9"),
-	STR("r10"),
-	STR("r11"),
-	STR("r12"),
-	STR("r13"),
-	STR("r14"),
-	STR("r15"),
+constexpr const char* Registers[] = {
+	"r0",
+	"r1",
+	"r2",
+	"r3",
+	"r4",
+	"r5",
+	"r6",
+	"r7",
+	"r8",
+	"r9",
+	"r10",
+	"r11",
+	"r12",
+	"r13",
+	"r14",
+	"r15",
 };
 
-Str Types[] = {
-	STR("Byte"),
-	STR("Int"),
-	STR("UInt"),
-	STR("Float"),
-	STR("StringRef"),
-	STR("Object"),
-	STR("Any"),
-	STR("Array"),
+constexpr const char* VRegisters[] = {
+	"v0",
+	"v1",
+	"v2",
+	"v3",
+	"v4",
+	"v5",
+	"v6",
+	"v7",
+	"v8",
+	"v9",
+	"v10",
+	"v11",
+	"v12",
+	"v13",
+	"v14",
+	"v15",
 };
 
-static void DisCode(StreamOutput& Output, StreamInput& File, UInt32 Size) {
+constexpr const char* ArrayElement[] = {
+	"1B",
+	"8B",
+	"32B",
+};
+
+constexpr const char* FileType[] = {
+	"Executable",
+	"Library",
+};
+
+constexpr const char* JmpType[] = {
+	"jmp",
+	"je",
+	"jne",
+	"jl",
+	"jle",
+	"jg",
+	"jge",
+};
+
+constexpr const char* MathTypes[] = {
+	"add",
+	"sub",
+	"mul",
+	"div",
+	"iadd",
+	"isub",
+	"imul",
+	"idiv",
+	"fadd",
+	"fsub",
+	"fmul",
+	"fdiv",
+	"add8",
+	"sub8",
+	"mul8",
+	"div8",
+	"iadd8",
+	"isub8",
+	"imul8",
+	"idiv8",
+	"add16",
+	"sub16",
+	"mul16",
+	"div16",
+	"iadd16",
+	"isub16",
+	"imul16",
+	"idiv16",
+};
+
+constexpr const char* MathBin[] = {
+	"or",
+	"and",
+	"xor",
+	"shl",
+	"shr",
+	"or8",
+	"and8",
+	"xor8",
+	"shl8",
+	"shr8",
+	"or16",
+	"and16",
+	"xor16",
+};
+
+#define READ_AND_ADVANCE(dest, count) File.read((char*)&dest, count); i+=count;
+
+static void DisCode(FILE* Output, std::istream& File, UInt32 Size) {
 	UInt32 i = 0;
+	Byte util = 0;
+	Byte util2 = 0;
+	union {
+		UInt16 word = 0;
+		UInt32 dword;
+		UInt64 qword;
+	};
 
 	while (i < Size) {
-		codefile::OpCode opcode = codefile::OpCode::Brk;
-		File.Read(Cast<Byte*>(&opcode), 1);
+		codefile::OpCode opcode = (codefile::OpCode)0;
+		File.read((char*)&opcode, 1);
 		i++;
 
-		Output.WriteArray({ '\t' });
-
-		Output.Print(STR("{X} "), i - 1);
+		fprintf(Output, "\n\t");
+		fprintf(Output, "%08X: ", i - 1);
 
 		switch (opcode) {
 		case codefile::OpCode::Brk:
-			Output.Println(STR("brk"));
+			fprintf(Output, "brk");
 			break;
 		case codefile::OpCode::Mov:
-		{
-			Byte regs = 0;
-			File.Read(&regs, 1);
-			i++;
-			Output.Println(STR("mov {s}, {s}"), Registers[regs & 0xF], Registers[regs >> 4]);
-		}
-		break;
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "mov %s, %s", Registers[INST_ARG1(util)], Registers[INST_ARG2(util)]);
+			break;
 		case codefile::OpCode::Mov4:
-		{
-			Byte b = 0;
-			File.Read(&b, 1);
-			i += 1;
-			Output.Println(STR("mov.c4 {s}, #0x{Xb}"), Registers[b & 0xF], Byte(b >> 4));
-		}
-		break;
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "mov %s, #0x%02X", Registers[INST_ARG1(util)], INST_ARG2(util));
+			break;
 		case codefile::OpCode::Mov8:
-		{
-			i += 2;
-			Byte reg = 0;
-			Byte c = 0;
-			File.Read(&reg, 1);
-			File.Read(&c, 1);
-			Output.Println(STR("mov.c8 {s}, #0x{Xb}"), Registers[reg], c);
-		}
-		break;
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(util2, 1);
+			fprintf(Output, "mov %s, #0x%02X", Registers[INST_ARG2(util)], util2);
+			break;
 		case codefile::OpCode::Mov16:
-		{
-			i += 3;
-			Byte reg = 0;
-			UInt16 c = 0;
-			File.Read(&reg, 1);
-			File.Read(Cast<Byte*>(&c), sizeof(c));
-			Output.Println(STR("mov.c16 {s}, #0x{Xw}"), Registers[reg], c);
-		}
-		break;
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(word, 2);
+			fprintf(Output, "mov %s, #0x%04X", Registers[INST_ARG2(util)], word);
+			break;
 		case codefile::OpCode::Mov32:
-		{
-			i += 5;
-			Byte reg = 0;
-			UInt32 c = 0;
-			File.Read(&reg, 1);
-			File.Read(Cast<Byte*>(&c), sizeof(c));
-			Output.Println(STR("mov.c32 {s}, #0x{X}"), Registers[reg], c);
-		}
-		break;
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(dword, 4);
+			fprintf(Output, "mov %s, #0x%08X", Registers[INST_ARG2(util)], dword);
+			break;
 		case codefile::OpCode::Mov64:
-		{
-			i += 9;
-			Byte reg = 0;
-			UInt c = 0;
-			File.Read(&reg, 1);
-			File.Read(Cast<Byte*>(&c), sizeof(c));
-			Output.Println(STR("mov.c64 {s}, #0x{Xq}"), Registers[reg], c);
-		}
-		break;
-		case codefile::OpCode::MovRes:
-		{
-			i++;
-			Byte reg = 0;
-			File.Read(&reg, 1);
-			Output.Println(STR("mov.res {s}"), Registers[reg]);
-		}
-		break;
-		case codefile::OpCode::LocalSet4:
-		{
-			i++;
-			Byte op = 0;
-			File.Read(&op, 1);
-			Output.Println(STR("local.set4 [fp + #0x{Xb}], {s}"), Byte(op >> 4), Registers[op & 0xF]);
-		}
-		break;
-		case codefile::OpCode::LocalGet4:
-		{
-			i++;
-			Byte op = 0;
-			File.Read(&op, 1);
-			Output.Println(STR("local.get4 {s}, [fp + #0x{Xb}]"), Registers[op & 0xF], Byte(op >> 4));
-		}
-		break;
-		case codefile::OpCode::LocalSet:
-		{
-			UInt16 encoded = 0;
-			File.Read(Cast<Byte*>(&encoded), 2);
-			i += 2;
-			Output.Println(STR("local.set [fp + #0x{Xb}], {s}"), encoded >> 8, Registers[encoded & 0xF]);
-		}
-		break;
-		case codefile::OpCode::LocalGet:
-		{
-			UInt16 encoded = 0;
-			File.Read(Cast<Byte*>(&encoded), 2);
-			i += 2;
-			Output.Println(STR("local.get {s}, [fp + #0x{Xb}]"), Registers[encoded & 0xF], encoded >> 8);
-		}
-		break;
-		case codefile::OpCode::GlobalSet:
-		{
-			UInt32 encoded = 0;
-			File.Read(Cast<Byte*>(&encoded), 4);
-			i += 4;
-			Output.Println(STR("global.set [ds + #0x{X}], {s}"), encoded >> 4, Registers[encoded & 0xF]);
-		}
-		break;
-		case codefile::OpCode::GlobalGet:
-		{
-			UInt32 encoded = 0;
-			File.Read(Cast<Byte*>(&encoded), 4);
-			i += 4;
-			Output.Println(STR("global.get {s}, [ds + #0x{X}]"), Registers[encoded & 0xF], encoded >> 4);
-		}
-		break;
-		case codefile::OpCode::Inc:
-		{
-			i++;
-			Byte reg = 0;
-			File.Read(&reg, 1);
-			codefile::IncDecType it = (codefile::IncDecType)((reg & 0xF0) >> 4);
-			if (it == codefile::IncDecType::Signed) {
-				Output.Println(STR("iinc {s}"), Registers[reg]);
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(qword, 8);
+			fprintf(Output, "mov %s, #0x%016llX", Registers[INST_ARG2(util)], qword);
+			break;
+		case codefile::OpCode::Ldstr:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(dword, 4);
+			fprintf(Output, "load.string %s [st:#0x%08X]", Registers[INST_ARG1(util)], dword);
+			break;
+		case codefile::OpCode::Ldr:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(word, 2);
+			if (INST_ARG2(util) == codefile::BaseSP) {
+				fprintf(Output, "load %s, [sp + %04Xh]", Registers[INST_ARG1(util)], word);
 			}
-			else if (it == codefile::IncDecType::Unsigned) {
-				Output.Println(STR("inc {s}"), Registers[reg]);
+			else if (INST_ARG2(util) == codefile::BaseFP) {
+				fprintf(Output, "load %s, [fp + %04Xh]", Registers[INST_ARG1(util)], word);
 			}
-			else if (it == codefile::IncDecType::Real) {
-				Output.Println(STR("finc {s}"), Registers[reg]);
+			else if (INST_ARG2(util) == codefile::BaseCS) {
+				fprintf(Output, "load %s, [ds:%04Xh]", Registers[INST_ARG1(util)], word);
 			}
-		}
-		break;
-		case codefile::OpCode::Dec:
-		{
-			i++;
-			Byte reg = 0;
-			File.Read(&reg, 1);
-			codefile::IncDecType it = (codefile::IncDecType)((reg & 0xF0) >> 4);
-			if (it == codefile::IncDecType::Signed) {
-				Output.Println(STR("idec {s}"), Registers[reg]);
+			break;
+		case codefile::OpCode::Str:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(word, 2);
+			if (INST_ARG2(util) == codefile::BaseSP) {
+				fprintf(Output, "str %s, [sp + #0x%04X]", Registers[INST_ARG1(util)], word);
 			}
-			else if (it == codefile::IncDecType::Unsigned) {
-				Output.Println(STR("dec {s}"), Registers[reg]);
+			else if (INST_ARG2(util) == codefile::BaseFP) {
+				fprintf(Output, "str %s, [fp + #0x%04X]", Registers[INST_ARG1(util)], word);
 			}
-			else if (it == codefile::IncDecType::Real) {
-				Output.Println(STR("fdec {s}"), Registers[reg]);
+			else if (INST_ARG2(util) == codefile::BaseCS) {
+				fprintf(Output, "str %s, [ds:%04X]", Registers[INST_ARG1(util)], word);
 			}
-		}
-		break;
-		case codefile::OpCode::Add:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("add {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::IAdd:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("iadd {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::FAdd:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("fadd {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::Sub:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("sub {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::ISub:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("isub {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::FSub:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("fsub {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::Mul:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("mul {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::IMul:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("imul {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::FMul:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("fmul {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::Div:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("div {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::IDiv:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("idiv {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::FDiv:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(STR("fdiv {s}, {s}, {s}"),
-						   Registers[regs & 0xF], Registers[(regs >> 4) & 0xF], Registers[(regs >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::Add8:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(
-				STR("add.c8 {s}, {s}, #0x{Xb}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				regs >> 8
-			);
-		}
-		break;
-		case codefile::OpCode::IAdd8:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(
-				STR("iadd.c8 {s}, {s}, #0x{Xb}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				regs >> 8
-			);
-		}
-		break;
-		case codefile::OpCode::Sub8:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(
-				STR("sub.c8 {s}, {s}, #0x{Xb}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				regs >> 8
-			);
-		}
-		break;
-		case codefile::OpCode::ISub8:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(
-				STR("isub.c8 {s}, {s}, #0x{Xb}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				regs >> 8
-			);
-		}
-		break;
-		case codefile::OpCode::Mul8:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(
-				STR("mul.c8 {s}, {s}, #0x{Xb}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				regs >> 8
-			);
-		}
-		break;
-		case codefile::OpCode::IMul8:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(
-				STR("imul.c8 {s}, {s}, #0x{Xb}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				regs >> 8
-			);
-		}
-		break;
-		case codefile::OpCode::Div8:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(
-				STR("div.c8 {s}, {s}, #0x{Xb}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				regs >> 8
-			);
-		}
-		break;
-		case codefile::OpCode::IDiv8:
-		{
-			UInt16 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 2);
-			i += 2;
-			Output.Println(
-				STR("idiv.c8 {s}, {s}, #0x{Xb}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				regs >> 8
-			);
-		}
-		break;
-		case codefile::OpCode::Add16:
-		{
-			UInt32 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 3);
-			i += 3;
-			Output.Println(
-				STR("add.c16 {s}, {s}, #0x{Xw}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				UInt16(regs >> 8)
-			);
-		}
-		break;
-		case codefile::OpCode::IAdd16:
-		{
-			UInt32 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 3);
-			i += 3;
-			Output.Println(
-				STR("iadd.c16 {s}, {s}, #0x{Xw}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				UInt16(regs >> 8)
-			);
-		}
-		break;
-		case codefile::OpCode::Sub16:
-		{
-			UInt32 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 3);
-			i += 3;
-			Output.Println(
-				STR("sub.c16 {s}, {s}, #0x{Xw}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				UInt16(regs >> 8)
-			);
-		}
-		break;
-		case codefile::OpCode::ISub16:
-		{
-			UInt32 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 3);
-			i += 3;
-			Output.Println(
-				STR("isub.c16 {s}, {s}, #0x{Xw}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				UInt16(regs >> 8)
-			);
-		}
-		break;
-		case codefile::OpCode::Mul16:
-		{
-			UInt32 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 3);
-			i += 3;
-			Output.Println(
-				STR("mul.c16 {s}, {s}, #0x{Xw}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				UInt16(regs >> 8)
-			);
-		}
-		break;
-		case codefile::OpCode::IMul16:
-		{
-			UInt32 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 3);
-			i += 3;
-			Output.Println(
-				STR("imul.c16 {s}, {s}, #0x{Xw}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				UInt16(regs >> 8)
-			);
-		}
-		break;
-		case codefile::OpCode::Div16:
-		{
-			UInt32 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 3);
-			i += 3;
-			Output.Println(
-				STR("div.c16 {s}, {s}, #0x{Xw}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				UInt16(regs >> 8)
-			);
-		}
-		break;
-		case codefile::OpCode::IDiv16:
-		{
-			UInt32 regs = 0;
-			File.Read(Cast<Byte*>(&regs), 3);
-			i += 3;
-			Output.Println(
-				STR("idiv.c16 {s}, {s}, #0x{Xw}"),
-				Registers[regs & 0xF], Registers[(regs >> 4) & 0xF],
-				UInt16(regs >> 8)
-			);
-		}
-		break;
+			break;
 		case codefile::OpCode::Cmp:
-		{
-			Byte regs = 0;
-			File.Read(&regs, 1);
-			i++;
-			Output.Println(STR("cmp {s}, {s}"), Registers[regs & 0xF], Registers[regs >> 4]);
-		}
-		break;
-		case codefile::OpCode::ICmp:
-		{
-			Byte regs = 0;
-			File.Read(&regs, 1);
-			i++;
-			Output.Println(STR("icmp {s}, {s}"), Registers[regs & 0xF], Registers[regs >> 4]);
-		}
-		break;
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "cmp %s, %s", Registers[INST_ARG1(util)], Registers[INST_ARG2(util)]);
+			break;
 		case codefile::OpCode::FCmp:
-		{
-			Byte regs = 0;
-			File.Read(&regs, 1);
-			i++;
-			Output.Println(STR("fcmp {s}, {s}"), Registers[regs & 0xF], Registers[regs >> 4]);
-		}
-		break;
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "fcmp %s, %s", Registers[INST_ARG1(util)], Registers[INST_ARG2(util)]);
+			break;
 		case codefile::OpCode::TestZ:
-		{
-			i++;
-			Byte reg = 0;
-			File.Read(&reg, 1);
-			Output.Println(STR("test.z {s}"), Registers[reg & 0xF]);
-		}
-		break;
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "testz %s", Registers[INST_ARG1(util)]);
+			break;
 		case codefile::OpCode::Jmp:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("jmp #0x{X}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jez:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("jez #0x{X}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jnz:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("jnz #0x{X}"), ip);
-		}
-		break;
 		case codefile::OpCode::Je:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("je #0x{X}"), ip);
-		}
-		break;
 		case codefile::OpCode::Jne:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("jne #0x{X}"), ip);
-		}
-		break;
 		case codefile::OpCode::Jl:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("je #0x{X}"), ip);
-		}
-		break;
 		case codefile::OpCode::Jle:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("jle #0x{X}"), ip);
-		}
-		break;
 		case codefile::OpCode::Jg:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("jg #0x{X}"), ip);
-		}
-		break;
 		case codefile::OpCode::Jge:
-		{
-			UInt16 ip = 0;
-			File.Read(Cast<Byte*>(&ip), 2);
-			i += 2;
-			Output.Println(STR("jge #0x{X}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jmp8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("jmp.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jez8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("jez.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jnz8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("jnz.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Je8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("je.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jne8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("jne.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jl8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("jl.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jle8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("jle.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jg8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("jg.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Jge8:
-		{
-			Byte ip = 0;
-			File.Read(&ip, 1);
-			i++;
-			Output.Println(STR("jge.c8 #0x{Xb}"), ip);
-		}
-		break;
-		case codefile::OpCode::Call8:
-		{
-			Byte index = 0;
-			File.Read(&index, 1);
-			i++;
-			Output.Println(STR("call.8 #0x{Xb}"), index);
-		}
-		break;
+			READ_AND_ADVANCE(word, 2);
+			fprintf(Output, "%s #0x%04X",
+					JmpType[Byte(opcode) - Byte(codefile::OpCode::Jmp)],
+					word
+			);
+			break;
 		case codefile::OpCode::Call:
-		{
-			UInt32 index = 0;
-			File.Read(Cast<Byte*>(&index), 4);
-			i += 4;
-			Output.Println(STR("call #0x{X}"), index);
-		}
-		break;
+			READ_AND_ADVANCE(dword, 4);
+			fprintf(Output, "call [cs:%08X]", dword);
+			break;
 		case codefile::OpCode::Ret:
-			Output.Println(STR("ret"));
+			fprintf(Output, "ret");
+			break;
+		case codefile::OpCode::RetC:
+			READ_AND_ADVANCE(dword, 4);
+			fprintf(Output, "ret #0x%08X", dword);
+			break;
+		case codefile::OpCode::Inc:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "inc %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::IInc:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "iinc %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::FInc:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "finc %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::Dec:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "dec %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::IDec:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "idec %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::FDec:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "fdec %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::Add:
+		case codefile::OpCode::Sub:
+		case codefile::OpCode::Mul:
+		case codefile::OpCode::Div:
+		case codefile::OpCode::IAdd:
+		case codefile::OpCode::ISub:
+		case codefile::OpCode::IMul:
+		case codefile::OpCode::IDiv:
+		case codefile::OpCode::FAdd:
+		case codefile::OpCode::FSub:
+		case codefile::OpCode::FMul:
+		case codefile::OpCode::FDiv:
+			READ_AND_ADVANCE(word, 2);
+			fprintf(Output, "%s %s, %s, %s",
+					MathTypes[Byte(opcode) - Byte(codefile::OpCode::Add)],
+					Registers[MATH_DEST(word)],
+					Registers[MATH_SRC1(word)],
+					Registers[MATH_SRC2(word)]
+			);
+			break;
+		case codefile::OpCode::Add8:
+		case codefile::OpCode::Sub8:
+		case codefile::OpCode::Mul8:
+		case codefile::OpCode::Div8:
+		case codefile::OpCode::IAdd8:
+		case codefile::OpCode::ISub8:
+		case codefile::OpCode::IMul8:
+		case codefile::OpCode::IDiv8:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(util2, 1);
+			fprintf(Output, "%s %s, %s, #0x%02X",
+					MathTypes[Byte(opcode) - Byte(codefile::OpCode::Add)],
+					Registers[MATH_DEST(util)],
+					Registers[MATH_SRC1(util)],
+					util2
+			);
+			break;
+		case codefile::OpCode::Add16:
+		case codefile::OpCode::Sub16:
+		case codefile::OpCode::Mul16:
+		case codefile::OpCode::Div16:
+		case codefile::OpCode::IAdd16:
+		case codefile::OpCode::ISub16:
+		case codefile::OpCode::IMul16:
+		case codefile::OpCode::IDiv16:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(word, 2);
+			fprintf(Output, "%s %s, %s, #0x%04X",
+					MathTypes[Byte(opcode) - Byte(codefile::OpCode::Add)],
+					Registers[MATH_DEST(util)],
+					Registers[MATH_SRC1(util)],
+					word
+			);
+			break;
+		case codefile::OpCode::Or:
+		case codefile::OpCode::And:
+		case codefile::OpCode::XOr:
+		case codefile::OpCode::Shl:
+		case codefile::OpCode::Shr:
+			READ_AND_ADVANCE(word, 2);
+			fprintf(Output, "%s %s, %s, %s",
+					MathBin[Byte(opcode) - Byte(codefile::OpCode::XOr)],
+					Registers[MATH_DEST(word)],
+					Registers[MATH_SRC1(word)],
+					Registers[MATH_SRC2(word)]
+			);
+			break;
+		case codefile::OpCode::Or8:
+		case codefile::OpCode::And8:
+		case codefile::OpCode::XOr8:
+		case codefile::OpCode::Shl8:
+		case codefile::OpCode::Shr8:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(util2, 1);
+			fprintf(Output, "%s %s, %s, #0x%02X",
+					MathBin[Byte(opcode) - Byte(codefile::OpCode::XOr)],
+					Registers[MATH_DEST(util)],
+					Registers[MATH_SRC1(util)],
+					util
+			);
+			break;
+		case codefile::OpCode::Or16:
+		case codefile::OpCode::And16:
+		case codefile::OpCode::XOr16:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(word, 2);
+			fprintf(Output, "%s %s, %s, #0x%04X",
+					MathBin[Byte(opcode) - Byte(codefile::OpCode::XOr)],
+					Registers[MATH_DEST(util)],
+					Registers[MATH_SRC1(util)],
+					word
+			);
+			break;
+		case codefile::OpCode::Not:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "not %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::Neg:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "neg %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::Push8:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "push #0x%02X", util);
+			break;
+		case codefile::OpCode::Push16:
+			READ_AND_ADVANCE(word, 2);
+			fprintf(Output, "push #0x%04X", word);
+			break;
+		case codefile::OpCode::Push32:
+			READ_AND_ADVANCE(dword, 4);
+			fprintf(Output, "push #0x%08X", dword);
+			break;
+		case codefile::OpCode::Push64:
+			READ_AND_ADVANCE(qword, 8);
+			fprintf(Output, "push #0x%016llX", qword);
+			break;
+		case codefile::OpCode::Popd:
+			fprintf(Output, "popd");
+			break;
+		case codefile::OpCode::Push:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "push %s", Registers[INST_ARG1(util)]);
+			break;
+		case codefile::OpCode::Pop:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "pop %s", Registers[INST_ARG1(util)]);
 			break;
 		case codefile::OpCode::ArrayNew:
-		{
-			UInt16 encoded = 0;
-			File.Read(Cast<Byte*>(&encoded), 2);
-			i += 2;
-			Output.Println(STR("array.new {s}, size={s}, type {s}"),
-						   Registers[encoded & 0xF], Registers[(encoded >> 4) & 0xF],
-						   Types[(encoded >> 8)]
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "array.new %s, size=%s, %s",
+					Registers[INST_ARG1(util)],
+					Registers[INST_ARG1(util)],
+					ArrayElement[INST_ARG2(util)]
 			);
-		}
-		break;
-		case codefile::OpCode::ArrayLen:
-		{
-			Byte regs = 0;
-			File.Read(&regs, 1);
-			i++;
-			Output.Println(STR("array.len [{s}], {s}"), Registers[regs & 0xF], Registers[regs >> 4]);
-		}
-		break;
-		case codefile::OpCode::ArraySet:
-		{
-			UInt16 encoded = 0;
-			File.Read(Cast<Byte*>(&encoded), 2);
-			i += 2;
-			Output.Println(STR("array.set [{s} + {s}], {s}"),
-						   Registers[encoded & 0xF], Registers[(encoded >> 4) & 0xF],
-						   Registers[(encoded >> 8) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::ArrayGet:
-		{
-			UInt16 encoded = 0;
-			File.Read(Cast<Byte*>(&encoded), 2);
-			i += 2;
-			Output.Println(STR("array.get {s}, [{s} + {s}]"),
-						   Registers[(encoded >> 8) & 0xF],
-						   Registers[encoded & 0xF], Registers[(encoded >> 4) & 0xF]
-			);
-		}
-		break;
-		case codefile::OpCode::ArrayDestroy:
-		{
-			Byte reg = 0;
-			File.Read(&reg, 1);
-			i++;
-			Output.Println(STR("array.destroy [{s}]"), Registers[reg & 0xF]);
-		}
-		break;
-		case codefile::OpCode::StringGet4:
-		{
-			Byte val = 0;
-			File.Read(&val, 1);
-			i++;
-			Output.Println(STR("string.get4 {s}, [st + #0x{Xb}]"), Registers[val & 0xF], Byte(val >> 4));
-		}
-		break;
-		case codefile::OpCode::StringGet:
-		{
-			UInt32 encoded = 0;
-			File.Read(Cast<Byte*>(&encoded), 4);
-			i += 4;
-			Output.Println(STR("string.get {s}, [st + #0x{X}]"), Registers[encoded & 0xF], encoded >> 4);
-		}
-		break;
-		case codefile::OpCode::Push8:
-		{
-			Byte c = 0;
-			File.Read(&c, 1);
-			i++;
-			Output.Println(STR("push #0x{Xb}"), c);
-		}
-		break;
-		case codefile::OpCode::Push16:
-		{
-			UInt16 c = 0;
-			File.Read(Cast<Byte*>(&c), 1);
-			i += 2;
-			Output.Println(STR("push #0x{Xw}"), c);
-		}
-		break;
-		case codefile::OpCode::Push32:
-		{
-			UInt32 c = 0;
-			File.Read(Cast<Byte*>(&c), 1);
-			i += 4;
-			Output.Println(STR("push #0x{X}"), c);
-		}
-		break;
-		case codefile::OpCode::Push64:
-		{
-			UInt64 c = 0;
-			File.Read(Cast<Byte*>(&c), 1);
-			i += 8;
-			Output.Println(STR("push #0x{X}"), c);
-		}
-		break;
-		case codefile::OpCode::PopTop:
-			Output.Println(STR("poptop"));
 			break;
-		case codefile::OpCode::PushR0:
-		case codefile::OpCode::PushR1:
-		case codefile::OpCode::PushR2:
-		case codefile::OpCode::PushR3:
-		case codefile::OpCode::PushR4:
-		case codefile::OpCode::PushR5:
-		case codefile::OpCode::PushR6:
-		case codefile::OpCode::PushR7:
-		case codefile::OpCode::PushR8:
-		case codefile::OpCode::PushR9:
-		case codefile::OpCode::PushR10:
-		case codefile::OpCode::PushR11:
-		case codefile::OpCode::PushR12:
-		case codefile::OpCode::PushR13:
-		case codefile::OpCode::PushR14:
-		case codefile::OpCode::PushR15:
-		{
-			Output.WriteArray({ 'p', 'u', 's', 'h', ' ' });
-			Output.Write((Byte*)Registers[Byte(opcode) & 0xF], Strlen(Registers[Byte(opcode) & 0xF]));
-			Output.WriteArray({ '\n' });
-		}
-		break;
-		case codefile::OpCode::PopR0:
-		case codefile::OpCode::PopR1:
-		case codefile::OpCode::PopR2:
-		case codefile::OpCode::PopR3:
-		case codefile::OpCode::PopR4:
-		case codefile::OpCode::PopR5:
-		case codefile::OpCode::PopR6:
-		case codefile::OpCode::PopR7:
-		case codefile::OpCode::PopR8:
-		case codefile::OpCode::PopR9:
-		case codefile::OpCode::PopR10:
-		case codefile::OpCode::PopR11:
-		case codefile::OpCode::PopR12:
-		case codefile::OpCode::PopR13:
-		case codefile::OpCode::PopR14:
-		case codefile::OpCode::PopR15:
-		{
-			Output.WriteArray({ 'p', 'o', 'p', ' ' });
-			Output.Write((Byte*)Registers[Byte(opcode) & 0xF], Strlen(Registers[Byte(opcode) & 0xF]));
-			Output.WriteArray({ '\n' });
-		}
-		break;
-		case codefile::OpCode::PushLocal:
-		{
-			Byte index = 0;
-			File.Read(&index, 1);
-			i++;
-			Output.Println(STR("push [fp + #0x{Xb}]"), index);
-		}
-		break;
-		case codefile::OpCode::PopLocal:
-		{
-			Byte index = 0;
-			File.Read(&index, 1);
-			i++;
-			Output.Println(STR("pop [fp + #0x{Xb}]"), index);
-		}
+		case codefile::OpCode::ArrayL:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "array.length %s, [%s]",
+					Registers[INST_ARG1(util)],
+					Registers[INST_ARG2(util)]
+			);
+			break;
+		case codefile::OpCode::ArrayLoad:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(util2, 1);
+			fprintf(Output, "array.load %s, [%s + %s]",
+					Registers[INST_ARG1(util2)],
+					Registers[INST_ARG1(util)],
+					Registers[INST_ARG2(util)]
+			);
+			break;
+		case codefile::OpCode::ArrayStore:
+			READ_AND_ADVANCE(util, 1);
+			READ_AND_ADVANCE(util2, 1);
+			fprintf(Output, "array.store %s, [%s + %s]",
+					Registers[INST_ARG1(util2)],
+					Registers[INST_ARG1(util)],
+					Registers[INST_ARG2(util)]
+			);
+			break;
+		case codefile::OpCode::ArrayDestroy:
+			READ_AND_ADVANCE(util, 1);
+			fprintf(Output, "array.destroy [%s]",
+					Registers[INST_ARG1(util)]
+			);
 			break;
 		default:
-			Output.Println(STR("Invalid Opcode 0x{xb}"), IntCast<Byte>(opcode));
+			fprintf(Output, "Invalid Opcode 0x%02Xh", Byte(opcode));
 			break;
 		}
 	}
+
+	fputc('\n', Output);
 }
 
-bool Dis(StreamOutput& Output, Str FilePath) {
-	io::File file = io::File::Open(FilePath);
-	if (file.Err != io::Success) {
+bool Dis(FILE* Output, const char* FilePath) {
+	std::ifstream file{ FilePath, std::ios::ate | std::ios::binary };
+	if (!file.is_open()) {
 		return false;
 	}
 
-	if (file.Size() < sizeof(codefile::FileHeader)) {
+	USize size = file.tellg();
+	file.seekg(0);
+	if (size < sizeof(codefile::FileHeader)) {
 		return false;
 	}
 
 	codefile::FileHeader header{};
-	file.Read(Cast<Byte*>(&header), sizeof(codefile::FileHeader));
-	if (file.Size() != header.CheckSize)
+	file.read(reinterpret_cast<char*>(&header), sizeof(codefile::FileHeader));
+	if (size != header.CheckSize)
 		return false;
-	
-	if (!mem::Cmp(&header.Signature, (void*)&codefile::Signature[0], sizeof(codefile::Signature)))
+
+	if (memcmp(&header.Signature, (void*)codefile::Signature, sizeof(codefile::Signature)) != 0)
 		return false;
-	
-	Output.Println(STR(".type 0x{xw}"), header.FileType);
-	Output.Println(STR(".version {w}.{w}"), header.MajorVersion, header.MinorVersion);
-	Output.Println(STR(".number_of_sections {xb}"), header.NumberOfSections);
-	Output.Println(STR(".entry_point {x}\n"), header.EntryPoint);
 
-	for (Byte i = 0; i < header.NumberOfSections; i++) {
-		codefile::SectionHeader section = {};
-		file.Read(Cast<Byte*>(&section), sizeof(codefile::SectionHeader));
+	fprintf(Output, ".type %s\n", FileType[header.FileType]);
+	fprintf(Output, ".version %d.%d\n", header.MajorVersion, header.MinorVersion);
+	fprintf(Output, ".data_size %d\n", header.DataSize);
+	fprintf(Output, ".function_size %d\n", header.FunctionSize);
+	fprintf(Output, ".strings_size %d\n", header.StringsSize);
+	fprintf(Output, ".entry_point %d\n\n", header.EntryPoint);
 
-		if (section.Type == codefile::SectionCode) {
-			Output.Println(STR("section .code"));
-			for (UInt32 f = 0; f < section.CountOfElements; f++) {
-				codefile::FunctionHeader fn = {};
-				file.Read(Cast<Byte*>(&fn), sizeof(codefile::FunctionHeader));
+	if (header.DataSize) {
+		fprintf(Output, "section .data\n");
+		for (UInt32 g = 0; g < header.DataSize; g++) {
+			codefile::DataHeader global = {};
+			file.read((char*)&global, sizeof(codefile::DataHeader));
 
-				Output.Println(STR(".function {x}:"), f);
-				Output.Println(STR("\t.flags {w}"), fn.Flags);
-				if (fn.Flags & codefile::FunctionNative) {
-					Output.Println(STR("\t.entry {w}"), fn.LocalReserve);
-					Output.Println(STR("\t.library {w}"), fn.SizeOfCode);
-				}
-				else {
-					Output.Println(STR("\t.locals {w}"), fn.LocalReserve);
-					Output.Println(STR("\t.size {w}"), fn.SizeOfCode);
-					Output.Println(STR("\t.code"));
-					DisCode(Output, file, fn.SizeOfCode);
-				}
-
-				Output.WriteArray({ '\n' });
+			fprintf(Output, ".global %d: ", g);
+			if (global.Primitive == codefile::PrimitiveByte) {
+				Byte b = 0;
+				file.read((char*)&b, 1);
+				fprintf(Output, "byte %02X = %d", b, b);
+			}
+			else if (global.Primitive == codefile::PrimitiveInt) {
+				UInt64 c = 0;
+				file.read(reinterpret_cast<char*>(&c), 8);
+				fprintf(Output, "int %llX = %lli", c, c);
+			}
+			else if (global.Primitive == codefile::PrimitiveUInt) {
+				UInt64 c = 0;
+				file.read(reinterpret_cast<char*>(&c), 8);
+				fprintf(Output, "uint %llX = %llu", c, c);
+			}
+			else if (global.Primitive == codefile::PrimitiveFloat) {
+				union {
+					UInt c = 0;
+					Float real;
+				};
+				file.read(reinterpret_cast<char*>(&c), 8);
+				fprintf(Output, "float Raw -> %016llX, Real -> %f", c, real);
 			}
 		}
-		else if (section.Type == codefile::SectionData) {
-			Output.Println(STR("section .data"));
-			for (UInt32 g = 0; g < section.CountOfElements; g++) {
-				codefile::DataHeader global = {};
-				file.Read(Cast<Byte*>(&global), sizeof(codefile::DataHeader));
+		fputc('\n', Output);
+	}
 
-				Output.Print(STR(".global {d}: "), g);
-				if (global.Primitive == codefile::PrimitiveByte) {
-					Byte b = 0;
-					file.Read(&b, 1);
-					Output.Println(STR("byte #0x{Xb}"), b);
-				}
-				else if (global.Primitive == codefile::PrimitiveInt) {
-					UInt c = 0;
-					file.Read(Cast<Byte*>(&c), 8);
-					Output.Println(STR("int #0x{Xq}"), c);
-				}
-				else if (global.Primitive == codefile::PrimitiveUInt) {
-					UInt c = 0;
-					file.Read(Cast<Byte*>(&c), 8);
-					Output.Println(STR("uint #0x{Xq}"), c);
-				}
-				else if (global.Primitive == codefile::PrimitiveFloat) {
-					union {
-						UInt c = 0;
-						Float real;
-					};
-					file.Read(Cast<Byte*>(&c), 8);
-					Output.Println(STR("float Raw -> #0x{Xq}, Real -> {f}"), c, real);
-				}
+	if (header.FunctionSize) {
+		fprintf(Output, "section .code\n");
+		for (UInt32 f = 0; f < header.FunctionSize; f++) {
+			codefile::FunctionHeader fn = {};
+			file.read(reinterpret_cast<char*>(&fn), sizeof(codefile::FunctionHeader));
+
+			fprintf(Output, ".function %d:\n", f);
+			fprintf(Output, "\t.flags %d\n", fn.Flags);
+			if (fn.Flags & codefile::FunctionNative) {
+				fprintf(Output, "\t.entry st:%d\n", UInt32(fn.StackArguments | fn.LocalReserve << 16));
+				fprintf(Output, "\t.library st:%d\n", fn.SizeOfCode);
 			}
-			Output.WriteArray({ '\n' });
-		}
-		else if (section.Type == codefile::SectionST) {
-			Output.Println(STR("section .st"));
-			for (UInt32 s = 0; s < section.CountOfElements; s++) {
-				UInt16 len = 0;
-				file.Read(Cast<Byte*>(&len), 2);
-				Char* str = (Char*)mem::Allocate(len);
-				file.Read(Cast<Byte*>(str), len);
-				str[len - 1] = 0;
-
-				Output.Print(STR(".str {w}: \""), s);
-				for (UInt16 ci = 0; ci < len; ci++) {
-					switch (str[ci]) {
-					case '\0':
-						Output.WriteArray({ '\\', '0' }); break;
-					case '\n':
-						Output.WriteArray({ '\\', 'n' }); break;
-					case '\r':
-						Output.WriteArray({ '\\', 'r' }); break;
-					case '\t':
-						Output.WriteArray({ '\\', 't' }); break;
-					default:
-						Output.WriteArray({ str[ci] });
-						break;
-					}
-				}
-
-				mem::Deallocate(str);
-				Output.Println(STR("\""));
+			else {
+				fprintf(Output, "\t.locals %d\n", fn.LocalReserve);
+				fprintf(Output, "\t.size %d\n", fn.SizeOfCode);
+				fprintf(Output, "\t.code");
+				DisCode(Output, file, fn.SizeOfCode);
 			}
+
+			fputc('\n', Output);
 		}
 	}
 
-	file.Close();
+	if (header.StringsSize)
+		fprintf(Output, "section .st\n");
+	{
+		for (UInt32 s = 0; s < header.StringsSize; s++) {
+			UInt16 len = 0;
+			file.read(reinterpret_cast<char*>(&len), 2);
+			Char* str = new Char[len];
+			file.read(reinterpret_cast<char*>(str), len);
+			str[len - 1] = 0;
+
+			fprintf(Output, ".str %d: \"", s);
+			for (UInt16 ci = 0; ci < len; ci++) {
+				switch (str[ci]) {
+				case '\0':
+					fputc('\\', Output);
+					fputc('0', Output);
+					break;
+				case '\n':
+					fputc('\\', Output);
+					fputc('n', Output);
+					break;
+				case '\r':
+					fputc('\\', Output);
+					fputc('r', Output);
+					break;
+				case '\t':
+					fputc('\\', Output);
+					fputc('t', Output);
+					break;
+				default:
+					fputc(str[ci], Output);
+					break;
+				}
+			}
+
+			delete[] str;
+			fprintf(Output, "\"");
+			fputc('\n', Output);
+		}
+		fputc('\n', Output);
+	}
+
+	file.close();
 
 	return true;
 }

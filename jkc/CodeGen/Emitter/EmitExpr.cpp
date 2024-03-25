@@ -1,9 +1,13 @@
-#include "jkc/CodeGen/Emitter/Emitter.h"
+#include "jkc/CodeGen/Emitter/EmitExpr.h"
+#include "jkc/CodeGen/Emitter/EmitStat.h"
+#include "jkc/CodeGen/Emitter/EmitterState.h"
+#include "jkc/CodeGen/Emitter/EmitExprMacros.h"
 #include "jkc/AST/Expresions.h"
+#include <jkr/Utility.h>
 
 namespace CodeGen {
 
-TmpValue Emitter::EmitExpresion(AST::Expresion* Expr) {
+TmpValue EmitExpresion(EmitterState& /*State*/, AST::Expresion* Expr) {
     if (Expr->Type == AST::ExpresionType::Constant) {
         auto constant = (AST::Constant*)Expr;
         return TmpValue{
@@ -13,56 +17,59 @@ TmpValue Emitter::EmitExpresion(AST::Expresion* Expr) {
         };
     }
 
-    return TmpValue();
+    return TmpValue(TmpType::Err);
 }
 
-TmpValue Emitter::EmitFunctionExpresion(AST::Expresion* Expr, Function& Fn) {
+TmpValue EmitFunctionExpresion(EmitterState& State, AST::Expresion* Expr, Function& Fn) {
     if (Expr->Type == AST::ExpresionType::Constant) {
-        return EmitFunctionConstant((AST::Constant*)Expr, Fn);
+        return EmitFunctionConstant(State, (AST::Constant*)Expr, Fn);
     }
     else if (Expr->Type == AST::ExpresionType::Identifier) {
-        return EmitFunctionIdentifier((AST::Identifier*)Expr, Fn);
+        return EmitFunctionIdentifier(State, (AST::Identifier*)Expr, Fn);
     }
     else if (Expr->Type == AST::ExpresionType::Group) {
-        return EmitFunctionExpresion(((AST::Group*)Expr)->Value, Fn);
+        return EmitFunctionExpresion(State, ((AST::Group*)Expr)->Value.get(), Fn);
     }
     else if (Expr->Type == AST::ExpresionType::Call) {
-        return EmitFunctionCall((AST::Call*)Expr, Fn);
+        return EmitFunctionCall(State, (AST::Call*)Expr, Fn);
     }
     else if (Expr->Type == AST::ExpresionType::BinaryOp) {
-        return EmitFunctionBinaryOp((AST::BinaryOp*)Expr, Fn);
+        return EmitFunctionBinaryOp(State, (AST::BinaryOp*)Expr, Fn);
     }
     else if (Expr->Type == AST::ExpresionType::Unary) {
-        return EmitFunctionUnary((AST::Unary*)Expr, Fn);
+        return EmitFunctionUnary(State, (AST::Unary*)Expr, Fn);
     }
     else if (Expr->Type == AST::ExpresionType::Dot) {
-        return EmitFunctionDot((AST::Dot*)Expr, Fn);
+        return EmitFunctionDot(State, (AST::Dot*)Expr, Fn);
     }
     else if (Expr->Type == AST::ExpresionType::ArrayList) {
-        return EmitFunctionArrayList((AST::ArrayList*)Expr, Fn);
+        return EmitFunctionArrayList(State, (AST::ArrayList*)Expr, Fn);
     }
     else if (Expr->Type == AST::ExpresionType::Block) {
-        return EmitFunctionBlock((AST::Block*)Expr, Fn);
+        return EmitFunctionBlock(State, (AST::Block*)Expr, Fn);
     }
     else if (Expr->Type == AST::ExpresionType::ArrayAccess) {
-        return EmitFunctionArrayAccess((AST::ArrayAccess*)Expr, Fn);
+        return EmitFunctionArrayAccess(State, (AST::ArrayAccess*)Expr, Fn);
+    }
+    else if (Expr->Type == AST::ExpresionType::IncDec) {
+        return EmitFunctionIncDec(State, (AST::IncDec*)Expr, Fn);
+    }
+    else if (Expr->Type == AST::ExpresionType::Assignment) {
+        return EmitFunctionAssignment(State, (AST::Assignment*)Expr, Fn);
     }
 
     assert(0 && "Invalid expresion");
-    return TmpValue();
+    return TmpValue(TmpType::Err);
 }
 
-TmpValue Emitter::EmitFunctionConstant(AST::Constant* Constant, Function& /*Fn*/) {
+TmpValue EmitFunctionConstant(EmitterState& State, AST::Constant* Constant, Function& /*Fn*/) {
     TmpValue tmp = {};
     tmp.Ty = TmpType::Constant;
     tmp.Type = Constant->ValueType;
     tmp.Data = Constant->Unsigned;
 
     if (Constant->ValueType.IsUInt() || Constant->ValueType.IsInt()) {
-        if (Constant->Unsigned <= Const4Max) {
-            tmp.Type.SizeInBits = 4;
-        }
-        else if (Constant->Unsigned <= UINT8_MAX) {
+        if (Constant->Unsigned <= UINT8_MAX) {
             tmp.Type.SizeInBits = 8;
         }
         else if (Constant->Unsigned <= UINT16_MAX) {
@@ -73,106 +80,129 @@ TmpValue Emitter::EmitFunctionConstant(AST::Constant* Constant, Function& /*Fn*/
         }
     }
     else if (Constant->ValueType.IsConstString()) {
-        Strings.Push(Constant->String.c_str(), Constant->String.size() + 1);
-        tmp.Data = Strings.Size - 1;
+        auto& str = State.Strings.emplace_back(Constant->String.data(), Constant->String.size());
+        tmp.Data = State.Strings.size() - 1;
+        str.Location = Constant->Location;
     }
 
     return tmp;
 }
 
-TmpValue Emitter::EmitFunctionIdentifier(AST::Identifier* ID, Function& Fn) {
-    return GetID(ID->ID, Fn, ID->Location);
+TmpValue EmitFunctionIdentifier(EmitterState& State, AST::Identifier* ID, Function& Fn) {
+    return State.GetID(ID->ID, Fn, ID->Location);
 }
 
-TmpValue Emitter::EmitFunctionCall(AST::Call* Call, Function& Fn) {
+TmpValue EmitFunctionCall(EmitterState& State, AST::Call* Call, Function& Fn) {
     TmpValue result = {};
-    Function* target = GetFn(Call->Target);
-    if (target == nullptr) return result;
+    Function* target = State.GetFn(Call->Target.get());
+    if (target == nullptr) {
+        return TmpValue{ TmpType::Err };
+    }
 
-    List<Byte> usedRegisters;
-    for (auto& reg : Registers) {
+    std::vector<Byte> usedRegisters{};
+    for (auto& reg : State.Registers) {
         if (reg.IsAllocated) {
-            usedRegisters.Push(reg.Index);
-            CodeAssembler.Push(Fn, reg.Index);
-            DeallocateRegister(reg.Index);
+            usedRegisters.emplace_back(reg.Index);
+            State.CodeAssembler.Push(Fn, reg.Index);
+            State.DeallocateRegister(reg.Index);
         }
     }
 
-    if (target->CountOfArguments != Call->Arguments.Size) {
-        Error(Call->Location,
-              STR("{u} arguments was expected but {u} was founded"),
+    if (target->CountOfArguments != Call->Arguments.size()) {
+        State.Error(Call->Location,
+              u8"%llu arguments was expected but %llu was founded",
               (UInt)target->CountOfArguments,
-              Call->Arguments.Size
+              Call->Arguments.size()
         );
+        return TmpValue(TmpType::Err);
     }
 
-    Context.IsInCall = true;
+    State.Context.IsInCall = true;
     for (Int8 i = target->CountOfArguments; i > 0; i--) {
         TmpValue arg = EmitFunctionExpresion(
-            Call->Arguments[static_cast<USize>(i) - 1], Fn
+            State, Call->Arguments[static_cast<USize>(i) - 1].get(), Fn
         );
+
+        // Checking uninitialized variables
+        if (arg.IsFunctionLocal()) {
+            CHECK_UNINITIALIZED_LOCAL(Fn.Locals.Get(arg.Index), Call->Location);
+        }
 
         if (target->IsRegisterBased()) {
             if (i <= target->RegisterArguments) {
-                if (arg.Ty == TmpType::Register) {
+                if (arg.IsLocalReg() || arg.IsRegister()) {
                     if (arg.Reg != i) {
-                        CodeAssembler.Mov(Fn, Byte(i), arg.Reg);
+                        State.CodeAssembler.Mov(Fn, Byte(i), arg.Reg);
                     }
                 }
                 else {
-                    MoveTmp(Fn, Byte(i), arg);
+                    State.MoveTmp(Fn, Byte(i), arg);
                 }
             }
         }
         else {
-            PushTmp(Fn, arg);
+            State.PushTmp(Fn, arg);
         }
 
         auto& local = target->Locals.Get(
             static_cast<USize>(i) - 1
         );
-        TypeError(
+        State.TypeError(
             local.Type, arg.Type, Call->Location,
-            STR("Invalid argument at {d}: using a value of type '{s}' with a argument of type '{s}'"),
+            u8"Invalid argument at %d: using a value of type '%s' with a argument of type '%s'",
             i, arg.Type.ToString().c_str(), local.Type.ToString().c_str()
         );
 
     }
-    Context.IsInCall = false;
+    State.Context.IsInCall = false;
 
-    if (target->Address <= ByteMax) {
-        CodeAssembler.Call8(Fn, (Byte)target->Address);
+    if (target->Address <= Const32Max) {
+        State.CodeAssembler.Call(Fn, target->Address);
     }
     else {
-        CodeAssembler.Call(Fn, target->Address);
+        State.Error(Call->Location, u8"Address too long");
+        return TmpValue(TmpType::Err);
     }
 
-    if (usedRegisters.Size) {
-        auto end = usedRegisters.end();
-        while (--end != usedRegisters.begin() - 1) {
-            CodeAssembler.Pop(Fn, *end);
-            Registers[*end].IsAllocated = true;
+    if (usedRegisters.size()) {
+        Int i = Int(usedRegisters.size());
+        while (i > 0) {
+            State.CodeAssembler.Pop(Fn, usedRegisters[i-1]);
+            State.Registers[usedRegisters[i - 1]].IsAllocated = true;
+            i--;
         }
     }
 
     result.Ty = TmpType::Register;
     result.Type = target->Type;
     if (!target->Type.IsVoid()) {
-        Registers[0].IsAllocated = true;
+        State.Registers[0].IsAllocated = true;
         result.Reg = 0;
     }
 
-    usedRegisters.Destroy();
     return result;
 }
 
-TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, Function& Fn) {
-    TmpValue left = EmitFunctionExpresion(BinOp->Left, Fn);
-    TmpValue right = EmitFunctionExpresion(BinOp->Right, Fn);
-    TmpValue result = {};
-    TypeError(
+TmpValue EmitFunctionBinaryOp(EmitterState& State, AST::BinaryOp* BinOp, Function& Fn) {
+    TmpValue left = EmitFunctionExpresion(State, BinOp->Left.get(), Fn);
+    TmpValue right = EmitFunctionExpresion(State, BinOp->Right.get(), Fn);
+
+    // Checking uninitialized variables
+    if (left.IsFunctionLocal()) {
+        CHECK_UNINITIALIZED_LOCAL(Fn.Locals.Get(left.Index), BinOp->Location);
+    }
+    if (right.IsFunctionLocal()) {
+        CHECK_UNINITIALIZED_LOCAL(Fn.Locals.Get(right.Index), BinOp->Location);
+    }
+
+    if (left.IsErr() || right.IsErr()) {
+        return TmpValue{ TmpType::Err };
+    }
+
+    TmpValue result = left;
+    State.TypeError(
         left.Type, right.Type, BinOp->Location,
-        STR("Invalid operands type '{s}' and '{s}'"),
+        u8"Invalid operands type '%s' and '%s'",
         left.Type.ToString().c_str(), right.Type.ToString().c_str()
     );
 
@@ -185,7 +215,17 @@ TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, Function& Fn) {
     case AST::BinaryOperation::MulEqual:
     case AST::BinaryOperation::Div:
     case AST::BinaryOperation::DivEqual:
-        result = EmitBinaryOp(left, right, BinOp->Op, Fn);
+    case AST::BinaryOperation::BinaryAnd:
+    case AST::BinaryOperation::BinaryAndEqual:
+    case AST::BinaryOperation::BinaryOr:
+    case AST::BinaryOperation::BinaryOrEqual:
+    case AST::BinaryOperation::BinaryXOr:
+    case AST::BinaryOperation::BinaryXOrEqual:
+    case AST::BinaryOperation::BinaryShl:
+    case AST::BinaryOperation::BinaryShlEqual:
+    case AST::BinaryOperation::BinaryShr:
+    case AST::BinaryOperation::BinaryShrEqual:
+        result = EmitBinaryOp(State, left, right, BinOp->Op, Fn);
         break;
     case AST::BinaryOperation::Comparision:
     case AST::BinaryOperation::NotEqual:
@@ -197,74 +237,53 @@ TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, Function& Fn) {
         UInt8 rightReg = UInt8(-1);
         if (right.IsConstant() && right.Data == 0) {
             if (left.IsRegister()) {
-                CodeAssembler.TestZ(Fn, left.Reg);
+                State.CodeAssembler.TestZ(Fn, left.Reg);
             }
             else if (left.IsLocal()) {
-                UInt8 tmp = AllocateRegister();
-                MoveTmp(Fn, tmp, left);
-                CodeAssembler.TestZ(Fn, tmp);
-                DeallocateRegister(tmp);
+                UInt8 tmp = State.AllocateRegister();
+                State.MoveTmp(Fn, tmp, left);
+                State.CodeAssembler.TestZ(Fn, tmp);
+                State.DeallocateRegister(tmp);
             }
             else if (left.IsLocalReg()) {
-                CodeAssembler.TestZ(Fn, left.Reg);
+                State.CodeAssembler.TestZ(Fn, left.Reg);
             }
             break;
         }
 
         if (!right.IsLocalReg() && !right.IsRegister()) {
-            rightReg = AllocateRegister();
-            MoveTmp(Fn, rightReg, right);
+            rightReg = State.AllocateRegister();
+            State.MoveTmp(Fn, rightReg, right);
         }
         else {
             rightReg = (UInt8)right.Data;
         }
 
-        if (left.IsRegister()) {
-            if (left.Type.IsInt()) {
-                CodeAssembler.ICmp(Fn, left.Reg, rightReg);
-            }
-            else if (left.Type.IsUInt()) {
-                CodeAssembler.Cmp(Fn, left.Reg, rightReg);
-            }
-            else if (left.Type.IsFloat()) {
-                CodeAssembler.FCmp(Fn, left.Reg, rightReg);
-            }
+        UInt8 leftReg = UInt8(-1);
+        if (left.IsRegister() || left.IsLocalReg()) {
+            leftReg = left.Reg;
         }
-        else if (left.IsLocal()) {
-            UInt8 tmp = AllocateRegister();
-            MoveTmp(Fn, tmp, left);
-            DeallocateRegister(tmp);
+        else if (left.IsLocal() || left.IsGlobal()) {
+            leftReg = State.AllocateRegister();
+            State.MoveTmp(Fn, leftReg, left);
+            State.DeallocateRegister(leftReg);
+        }
 
-            if (left.Type.IsInt()) {
-                CodeAssembler.ICmp(Fn, tmp, rightReg);
-            }
-            else if (left.Type.IsUInt()) {
-                CodeAssembler.Cmp(Fn, tmp, rightReg);
-            }
-            else if (left.Type.IsFloat()) {
-                CodeAssembler.FCmp(Fn, tmp, rightReg);
-            }
+        if (left.Type.IsUInt() || left.Type.IsInt()) {
+            State.CodeAssembler.Cmp(Fn, leftReg, rightReg);
         }
-        else if (left.IsLocalReg()) {
-            if (left.Type.IsInt()) {
-                CodeAssembler.ICmp(Fn, left.Reg, rightReg);
-            }
-            else if (left.Type.IsUInt()) {
-                CodeAssembler.Cmp(Fn, left.Reg, rightReg);
-            }
-            else if (left.Type.IsFloat()) {
-                CodeAssembler.FCmp(Fn, left.Reg, rightReg);
-            }
+        else if (left.Type.IsFloat()) {
+            State.CodeAssembler.FCmp(Fn, leftReg, rightReg);
         }
 
         if (rightReg != UInt8(-1)) {
-            DeallocateRegister(rightReg);
+            State.DeallocateRegister(rightReg);
         }
     }
     break;
     default:
         assert(0 && "Invalid binary operation");
-        break;
+        return TmpValue(TmpType::Err);
     }
 
     result.Type = left.Type;
@@ -272,188 +291,375 @@ TmpValue Emitter::EmitFunctionBinaryOp(AST::BinaryOp* BinOp, Function& Fn) {
     return result;
 }
 
-#define MAKE_OP_CONST(Type, Function, ...) \
-    if(Type.IsInt()) {\
-        CodeAssembler.I##Function(Fn, __VA_ARGS__);\
-    }\
-    else if(Type.IsUInt()) {\
-        CodeAssembler.##Function(Fn, __VA_ARGS__);\
-    }\
-
-#define MAKE_OP(Type, Function, ...) \
-    if(Type.IsInt()) {\
-        CodeAssembler.I##Function(Fn, __VA_ARGS__);\
-    }\
-    else if(Type.IsUInt()) {\
-        CodeAssembler.##Function(Fn, __VA_ARGS__);\
-    }\
-    else if (Type.IsFloat()) {\
-        CodeAssembler.F##Function(Fn, __VA_ARGS__);\
-    }
-
-#define MAKE_CASE(Case) \
-    if(Op == AST::BinaryOperation::Case){\
-        if(Right.IsRegister()) {\
-            MAKE_OP(Right.Type, Case, result.Reg, leftReg, Right.Reg);\
-            DeallocateRegister(Right.Reg);\
-        }\
-        else if (Right.IsConstant()) {\
-            if(Right.Data == 1 && \
-            (AST::BinaryOperation::Case == AST::BinaryOperation::Sub || \
-             AST::BinaryOperation::Case == AST::BinaryOperation::SubEqual)) {\
-                MAKE_OP(Right.Type, Dec, leftReg);\
-            }\
-            else if(Right.Data == 1 && \
-            (AST::BinaryOperation::Case == AST::BinaryOperation::Add || \
-             AST::BinaryOperation::Case == AST::BinaryOperation::AddEqual)) {\
-                MAKE_OP(Right.Type, Inc, leftReg);\
-            }\
-            else if (Right.Type.SizeInBits <= 8) {\
-                MAKE_OP_CONST(Right.Type, Case##8, result.Reg, leftReg, Right.Reg);\
-            }\
-            else if (Right.Type.SizeInBits <= 16) {\
-                MAKE_OP_CONST(Right.Type, Case##16, result.Reg, leftReg, (UInt16)Right.Data);\
-            }\
-            else {\
-            Byte tmp = AllocateRegister();\
-            MoveTmp(Fn, tmp, Right);\
-            MAKE_OP(Right.Type, Case, result.Reg, leftReg, tmp);\
-            DeallocateRegister(tmp);\
-            }\
-        }\
-        else if (Right.IsLocal()) {\
-            Byte tmp = AllocateRegister();\
-            MoveTmp(Fn, tmp, Right);\
-            MAKE_OP(Right.Type, Case, result.Reg, leftReg, tmp);\
-            DeallocateRegister(tmp);\
-        }\
-        else if (Right.IsLocalReg()) {\
-            MAKE_OP(Right.Type, Case, result.Reg, leftReg, Right.Reg);\
-        }\
-    }
-
-TmpValue Emitter::EmitBinaryOp(TmpValue& Left, TmpValue& Right, AST::BinaryOperation Op, Function& Fn) {
+TmpValue EmitBinaryOp(EmitterState& State, TmpValue& Left, TmpValue& Right, AST::BinaryOperation Op, Function& Fn) {
     TmpValue result = {};
     result.Reg = Byte(-1);
+    UInt8 leftReg = Byte(-1);
     UInt asInt = UInt(Op);
 
-    if (asInt >= 8 && asInt <= 11) {
+    if (asInt >= 10 && asInt <= 18) {
+        result = Left;
+        if (!Left.IsLocalReg() && !Left.IsRegister()) {
+            leftReg = State.AllocateRegister();
+            State.MoveTmp(Fn, leftReg, Left);
+            result.Reg = leftReg;
+        }
+        else {
+            result.Ty = Left.Ty;
+            result.Reg = leftReg = Left.Reg;
+        }
     }
     else {
-        UInt8 leftReg = Byte(-1);
         result.Ty = TmpType::Register;
-        if (Context.IsInReturn && !Context.IsInCall) {
-            if (!Registers[0].IsAllocated) {
+        if (State.Context.IsInReturn && !State.Context.IsInCall) {
+            if (!State.Registers[0].IsAllocated) {
                 result.Reg = 0;
-                Registers[0].IsAllocated = true;
+                State.Registers[0].IsAllocated = true;
             }
-            else {
-                if (Left.Reg == 0 || Right.Reg == 0)
-                    result.Reg = 0;
+            else if ((Left.Reg == 0 && Left.IsRegister()) || (Right.Reg == 0 && Right.IsRegister())) {
+                result.Reg = 0;
             }
         }
 
         if (!Left.IsLocalReg() && !Left.IsRegister()) {
-            leftReg = AllocateRegister();
-            MoveTmp(Fn, leftReg, Left);
-            if (result.Reg == Byte(-1))
+            leftReg = State.AllocateRegister();
+            State.MoveTmp(Fn, leftReg, Left);
+            if (result.Reg == Byte(-1)) {
                 result.Reg = leftReg;
+            }
         }
         else {
             leftReg = Left.Reg;
-            if (result.Reg == Byte(-1))
-                result.Reg = Left.Reg;
         }
 
-        MAKE_CASE(Add);
-        MAKE_CASE(Sub);
-        MAKE_CASE(Mul);
-        MAKE_CASE(Div);
+        if (result.Reg == Byte(-1)) {
+            if (Left.IsRegister()) {
+                result.Reg = Left.Reg;
+            }
+            else {
+                result.Reg = State.AllocateRegister();
+            }
+        }
+    }
 
+    MAKE_CASE(Add);
+    MAKE_CASE(Sub);
+    MAKE_CASE(Mul);
+    MAKE_CASE(Div);
+    MAKE_BINARY_CASE(And);
+    MAKE_BINARY_CASE(Or);
+    MAKE_BINARY_CASE(XOr);
+    MAKE_BINARY_CASE_NO_16(Shl);
+    MAKE_BINARY_CASE_NO_16(Shr);
+
+    if (asInt >= 10 && asInt <= 18) {
         if (!Left.IsLocalReg() && !Left.IsRegister()) {
-            DeallocateRegister(leftReg);
+            if (Left.IsLocal()) {
+                State.CodeAssembler.LocalSet(Fn, leftReg, Left.Local);
+            }
+            else if (Left.IsGlobal()) {
+                State.CodeAssembler.GlobalSet(Fn, leftReg, Left.Global);
+            }
+            State.DeallocateRegister(leftReg);
+        }
+    }
+    else {
+        if (Left.IsRegister() && result.Reg != Left.Reg) {
+            State.DeallocateRegister(Left.Reg);
+        }
+        else if (!Left.IsLocalReg() && !Left.IsRegister()) {
+            State.DeallocateRegister(leftReg);
         }
     }
 
     return result;
 }
 
-TmpValue Emitter::EmitFunctionUnary(AST::Unary* /*Unary*/, Function& /*Fn*/) {
+TmpValue EmitFunctionUnary(EmitterState& State, AST::Unary* Unary, Function& Fn) {
+    TmpValue tmp = EmitFunctionExpresion(State, Unary->Value.get(), Fn);
+    if (tmp.IsErr()) {
+        return TmpValue{ TmpType::Err };
+    }
+    TmpValue result = {};
+    result.Type = tmp.Type;
+    result.Ty = TmpType::Register;
+
+    // Checking uninitialized variables
+    if (tmp.IsFunctionLocal()) {
+        CHECK_UNINITIALIZED_LOCAL(Fn.Locals.Get(tmp.Index), Unary->Location);
+    }
+
+    if (tmp.IsLocalReg() || tmp.IsRegister()) {
+        if (tmp.IsRegister()) {
+            result.Reg = tmp.Reg;
+        }
+        else {
+            result.Reg = State.AllocateRegister();
+            State.CodeAssembler.Mov(Fn, result.Reg, tmp.Reg);
+        }
+    }
+    else if(tmp.IsGlobal()){
+        result.Reg = State.AllocateRegister();
+        State.CodeAssembler.GlobalGet(Fn, result.Reg, tmp.Global);
+    }
+    else if (tmp.IsLocal()) {
+        result.Reg = State.AllocateRegister();
+        State.CodeAssembler.LocalGet(Fn, result.Reg, tmp.Local);
+    }
+
+    switch (Unary->Op) {
+    case AST::UnaryOperation::Negate:
+        State.CodeAssembler.Neg(Fn, result.Reg);
+        break;
+    case AST::UnaryOperation::LogicalNegate:
+        State.CodeAssembler.Not(Fn, result.Reg);
+        break;
+    case AST::UnaryOperation::BinaryNAND:
+        State.CodeAssembler.Not(Fn, result.Reg);
+        break;
+    default:
+        assert(0 && "Invalid binary operation");
+        return TmpValue(TmpType::Err);
+    }
+
+    return tmp;
+}
+
+TmpValue EmitFunctionDot(EmitterState& /*State*/, AST::Dot* /*Dot*/, Function& /*Fn*/) {
     return TmpValue();
 }
 
-TmpValue Emitter::EmitFunctionDot(AST::Dot* /*Dot*/, Function& /*Fn*/) {
-    return TmpValue();
-}
-
-TmpValue Emitter::EmitFunctionArrayList(AST::ArrayList* ArrayList, Function& /*Fn*/) {
+TmpValue EmitFunctionArrayList(EmitterState& /*State*/, AST::ArrayList* ArrayList, Function& /*Fn*/) {
     return TmpValue{
         .Ty = TmpType::ArrayExpr,
-        .Data = Cast<UInt>(ArrayList),
+        .Data = UInt(ArrayList),
     };
 }
 
-TmpValue Emitter::EmitFunctionBlock(AST::Block* Block, Function& Fn) {
+TmpValue EmitFunctionBlock(EmitterState& State, AST::Block* Block, Function& Fn) {
     for (auto& stat : Block->Statements) {
-        EmitFunctionStatement(stat, Fn);
+        EmitFunctionStatement(State, stat.get(), Fn);
     }
 
     return TmpValue();
 }
 
-TmpValue Emitter::EmitFunctionArrayAccess(AST::ArrayAccess* ArrayAccess, Function& Fn) {
-    TmpValue toIndex = EmitFunctionExpresion(ArrayAccess->Expr, Fn);
-    TmpValue index = EmitFunctionExpresion(ArrayAccess->IndexExpr, Fn);
+TmpValue EmitFunctionArrayAccess(EmitterState& State, AST::ArrayAccess* ArrayAccess, Function& Fn) {
+    TmpValue toIndex = EmitFunctionExpresion(State, ArrayAccess->Expr.get(), Fn);
+    TmpValue index = EmitFunctionExpresion(State, ArrayAccess->IndexExpr.get(), Fn);
+    if (toIndex.IsErr() || index.IsErr()) {
+        return TmpValue(TmpType::Err);
+    }
+
+    // Checking uninitialized variables
+    // A array is always initialized with its elements in 0 by default
+    if (index.IsFunctionLocal()) {
+        CHECK_UNINITIALIZED_LOCAL(Fn.Locals.Get(index.Index), ArrayAccess->Location);
+    }
 
     if (toIndex.IsConstant()) {
-        Error(ArrayAccess->Location, STR("Invalid indexing of a non constant array"));
+        State.Error(ArrayAccess->Location, u8"Invalid indexing of a non constant array");
+        return TmpValue(TmpType::Err);
+    }
+
+    Byte dest = Byte(-1);
+    Byte arrayReg = Byte(-1);
+    Byte indexReg = Byte(-1);
+
+    if (toIndex.IsRegister() || toIndex.IsLocalReg()) {
+        arrayReg = toIndex.Reg;
     }
     else {
-        Byte dest = Byte(-1);
-        Byte arrayReg = Byte(-1);
-        Byte indexReg = Byte(-1);
-
-        if (toIndex.IsRegister() || toIndex.IsLocalReg()) {
-            arrayReg = toIndex.Reg;
-        }
-        else {
-            arrayReg = AllocateRegister();
-            MoveTmp(Fn, arrayReg, toIndex);
-        }
-
-
-        if (index.IsRegister() || index.IsLocalReg()) {
-            indexReg = index.Reg;
-        }
-        else {
-            indexReg = AllocateRegister();
-            MoveTmp(Fn, indexReg, index);
-        }
-
-        if (toIndex.IsRegister()) {
-            dest = arrayReg;
-        }
-        else {
-            dest = indexReg;
-        }
-
-        CodeAssembler.ArrayGet(Fn, arrayReg, indexReg, dest);
-
-        if (toIndex.IsRegister()) {
-            DeallocateRegister(arrayReg);
-        }
-        if (index.IsRegister()) {
-            DeallocateRegister(indexReg);
-        }
-
-        return TmpValue{
-            .Ty = TmpType::Register,
-            .Reg = dest,
-            .Type = toIndex.Type,
-        };
+        arrayReg = State.AllocateRegister();
+        State.MoveTmp(Fn, arrayReg, toIndex);
     }
 
-    return TmpValue();
+
+    if (index.IsRegister() || index.IsLocalReg()) {
+        indexReg = index.Reg;
+    }
+    else {
+        indexReg = State.AllocateRegister();
+        State.MoveTmp(Fn, indexReg, index);
+    }
+
+    if (State.Context.IsInReturn && !State.Context.IsInCall) {
+        if (arrayReg == 0) {
+            dest = arrayReg;
+        }
+        else if (indexReg == 0) {
+            dest = indexReg;
+        }
+        else {
+            dest = State.AllocateRegister();
+        }
+    }
+    else if (toIndex.IsRegister()) {
+        dest = arrayReg;
+    }
+    else {
+        dest = indexReg;
+    }
+
+    State.CodeAssembler.ArrayLoad(Fn, arrayReg, indexReg, dest);
+
+    if (toIndex.IsRegister()) {
+        State.DeallocateRegister(arrayReg);
+    }
+    if (index.IsRegister()) {
+        State.DeallocateRegister(indexReg);
+    }
+
+    AST::TypeDecl elementType = toIndex.Type;
+    elementType.Flags ^= AST::TypeDecl::Array;
+    elementType.ArrayLen = 0;
+    return TmpValue{
+        .Ty = TmpType::Register,
+        .Reg = dest,
+        .Type = elementType,
+    };
+}
+
+TmpValue EmitFunctionIncDec(EmitterState& State, AST::IncDec* IncDec, Function& Fn) {
+    TmpValue tmp = EmitFunctionExpresion(State, IncDec->Expr.get(), Fn);
+    if (tmp.IsErr()) {
+        return TmpValue(TmpType::Err);
+    }
+
+    // A array is always initialized with its elements in 0 by default
+    if (tmp.IsFunctionLocal()) {
+        CHECK_UNINITIALIZED_LOCAL(Fn.Locals.Get(tmp.Index), IncDec->Location);
+    }
+
+    TmpValue result = {};
+    result.Type = tmp.Type;
+
+    Byte reg = 0;
+    if (tmp.IsRegister() || tmp.IsLocalReg()) {
+        if (IncDec->After && tmp.IsLocalReg()) {
+            result.Ty = TmpType::Register;
+            result.Reg = State.AllocateRegister();
+            State.CodeAssembler.Mov(Fn, result.Reg, tmp.Reg);
+            if (tmp.IsRegister()) {
+                State.DeallocateRegister(tmp.Reg);
+            }
+            reg = tmp.Reg;
+        }
+        else {
+            result = tmp;
+            reg = result.Reg;
+        }
+
+    }
+    else {
+        reg = State.AllocateRegister();
+        if (IncDec->After) {
+            result.Ty = TmpType::Register;
+            result.Reg = State.AllocateRegister();
+            if (State.Context.IsInReturn) {
+                if (reg == 0) {
+                    Byte c = reg;
+                    reg = result.Reg;
+                    result.Reg = c;
+                }
+            }
+
+            State.MoveTmp(Fn, result.Reg, tmp);
+            State.CodeAssembler.Mov(Fn, reg, result.Reg);
+        }
+        else {
+            result = tmp;
+            State.MoveTmp(Fn, reg, tmp);
+        }
+    }
+
+    if (IncDec->Increment) {
+        if (tmp.Type.IsInt()) {
+            State.CodeAssembler.IInc(Fn, reg);
+        }
+        else if (tmp.Type.IsUInt() || tmp.Type.IsByte()) {
+            State.CodeAssembler.Inc(Fn, reg);
+        }
+        else if (tmp.Type.IsFloat()) {
+            State.CodeAssembler.FInc(Fn, reg);
+        }
+    }
+    else {
+        if (tmp.Type.IsInt()) {
+            State.CodeAssembler.IDec(Fn, reg);
+        }
+        else if (tmp.Type.IsUInt() || tmp.Type.IsByte()) {
+            State.CodeAssembler.Dec(Fn, reg);
+        }
+        else if (tmp.Type.IsFloat()) {
+            State.CodeAssembler.FDec(Fn, reg);
+        }
+    }
+
+    if (!tmp.IsRegister() && !tmp.IsLocalReg()) {
+        if (tmp.IsLocal()) {
+            State.CodeAssembler.LocalSet(Fn, reg, tmp.Local);
+        }
+        else if (tmp.IsGlobal()) {
+            State.CodeAssembler.GlobalSet(Fn, reg, tmp.Global);
+        }
+        else {
+            State.Error(IncDec->Location, u8"Invalid operation");
+            return TmpValue(TmpType::Err);
+        }
+    }
+
+    State.DeallocateRegister(reg);
+
+    return result;
+}
+
+TmpValue EmitFunctionAssignment(EmitterState& State, AST::Assignment* Assignment, Function& Fn) {
+    TmpValue target = EmitFunctionExpresion(State, Assignment->Target.get(), Fn);
+    TmpValue source = EmitFunctionExpresion(State, Assignment->Source.get(), Fn);
+    if (target.IsErr() || source.IsErr()) {
+        return TmpValue(TmpType::Err);
+    }
+
+    if (source.IsFunctionLocal()) {
+        CHECK_UNINITIALIZED_LOCAL(Fn.Locals.Get(source.Index), Assignment->Location);
+    }
+
+    if (target.IsFunctionLocal()) {
+        Fn.Locals.Get(target.Index).IsInitialized = true;
+    }
+
+    Byte sourceReg = Byte(-1);
+    if (source.IsLocalReg() || source.IsRegister()) {
+        sourceReg = source.Reg;
+    }
+    else if (source.IsArrayExpr()) {
+        State.Error(Assignment->Location, u8"Invalid assignment");
+        return TmpValue(TmpType::Err);
+    }
+    else if (source.IsConstant() && target.IsLocalReg()) {
+        State.MoveTmp(Fn, target.Reg, source);
+    }
+    else {
+        sourceReg = State.AllocateRegister();
+        State.MoveTmp(Fn, sourceReg, source);
+
+        if (target.IsLocalReg()) {
+            State.CodeAssembler.Mov(Fn, target.Reg, sourceReg);
+        }
+        else if (target.IsLocal()) {
+            State.CodeAssembler.LocalSet(Fn, sourceReg, target.Local);
+        }
+        else if (target.IsGlobal()) {
+            State.CodeAssembler.GlobalSet(Fn, sourceReg, target.Global);
+        }
+
+        if (sourceReg != Byte(-1)) {
+            State.DeallocateRegister(sourceReg);
+        }
+    }
+
+    return target;
 }
 
 }

@@ -1,5 +1,5 @@
 #pragma once
-#include "stdjk/CoreHeader.h"
+#include "jkr/CoreTypes.h"
 
 namespace codefile {
 
@@ -8,11 +8,11 @@ enum PrimitiveType : Byte {
     PrimitiveInt,
     PrimitiveUInt,
     PrimitiveFloat,
-    PrimitiveStringRef,
-    PrimitiveObject,
+    PrimitiveRef,
     PrimitiveAny, // Use for store references and values
                   // for example: Int, Array, Object, Float or a Byte
-    PrimitiveArray,
+    // Another Primitive Type follows this one generally
+    PrimitiveArray, /*Primitive Type[8 bits]*/
 
     PrimitiveVector2F,
     PrimitiveVector3F,

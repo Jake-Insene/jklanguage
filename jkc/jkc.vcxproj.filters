@@ -27,13 +27,7 @@
     <ClCompile Include="Lexer\Lexer.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
-    <ClCompile Include="CodeGen\Emitter\Emitter.cpp">
-      <Filter>Archivos de origen</Filter>
-    </ClCompile>
-    <ClCompile Include="AST\Statement.cpp">
-      <Filter>Archivos de origen</Filter>
-    </ClCompile>
-    <ClCompile Include="AST\Expresion.cpp">
+    <ClCompile Include="CodeGen\Emitter\EmitterState.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
     <ClCompile Include="CodeGen\Disassembler.cpp">
@@ -80,13 +74,7 @@
     <ClInclude Include="Compiler.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="Utility\File.h">
-      <Filter>Archivos de encabezado</Filter>
-    </ClInclude>
-    <ClInclude Include="Utility\Memory.h">
-      <Filter>Archivos de encabezado</Filter>
-    </ClInclude>
-    <ClInclude Include="Utility\Slice.h">
+    <ClInclude Include="CodeGen\CodeBuffer.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
     <ClInclude Include="Parser\Parser.h">
@@ -101,7 +89,7 @@
     <ClInclude Include="CodeGen\Assembler.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
-    <ClInclude Include="CodeGen\Emitter\Emitter.h">
+    <ClInclude Include="CodeGen\Emitter\EmitterState.h">
       <Filter>Archivos de encabezado</Filter>
     </ClInclude>
     <ClInclude Include="CodeGen\SymbolTable.h">
@@ -109,6 +97,24 @@
     </ClInclude>
     <ClInclude Include="CodeGen\Disassembler.h">
       <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="CodeGen\Emitter\PreEmit.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="CodeGen\Emitter\EmitStat.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="CodeGen\Values.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="CodeGen\Function.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="CodeGen\Emitter\EmitExpr.h">
+      <Filter>Archivos de encabezado</Filter>
+    </ClInclude>
+    <ClInclude Include="CodeGen\Emitter\EmitExprMacros.h">
+      <Filter>Archivos de origen</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

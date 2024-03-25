@@ -1,27 +1,27 @@
 #include "jkr/Runtime/Library.h"
 #include <Windows.h>
 
-Library Library::New(Str FilePath) {
-    IntPtr h = Cast<IntPtr>(
-        LoadLibraryA(Cast<LPCSTR>(FilePath))
+Library::Library(const String& FilePath) :
+    FilePath(FilePath)
+{
+    Handle = reinterpret_cast<IntPtr>(
+        LoadLibraryA((LPCSTR)FilePath.data())
     );
-    return Library{
-        .Handle = h,
-        .FilePath = FilePath,
-    };
 }
 
-Procedure Library::Get(this Library& Self, Str Entry) {
-    return Cast<Procedure>(
+Procedure Library::Get(Str Entry) {
+    return reinterpret_cast<Procedure>(
         GetProcAddress(
-            Cast<HMODULE>(Self.Handle),
-            Cast<LPCSTR>(Entry)
+            (HMODULE)Handle,
+            (LPCSTR)Entry
         )
     );
 }
 
-void Library::Destroy(this Library& Self) {
-    FreeLibrary(Cast<HMODULE>(Self.Handle));
-
+Library::~Library() {
+    if(Handle)
+    {
+        FreeLibrary((HMODULE)Handle);
+    }
 }
 

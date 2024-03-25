@@ -1,14 +1,13 @@
 #pragma once
-#include "stdjk/CoreHeader.h"
+#include <jkr/String.h>
+#include <jkr/Vector.h>
 #include <unordered_map>
-#include <string>
-#include <vector>
-#include <assert.h>
+#include <cassert>
 
 template<typename T>
 struct SymbolTable {
-    using MapType = std::unordered_map<std::u8string, USize>;
-    using VectorType = std::vector<T>;
+    using MapType = std::unordered_map<StringView, USize>;
+    using VectorType = Vector<T>;
 
     SymbolTable() {}
     ~SymbolTable() {}
@@ -21,30 +20,30 @@ struct SymbolTable {
 
     [[nodiscard]] MapType::const_iterator end() const { return Map.end(); }
     
-    decltype(auto) Emplace(this SymbolTable& Self, const std::u8string& Name) {
-        auto& element = Self.Data.emplace_back();
-        Self.Map.emplace(
-            Name, Self.Data.size() - 1
+    decltype(auto) Add(const StringView& Key) {
+        auto& element = Items.emplace_back();
+        Map.emplace(
+            Key, Items.size() - 1
         );
         return element;
     }
 
-    MapType::iterator Find(this SymbolTable& Self, const std::u8string& Name) {
-        return Self.Map.find(Name);
+    MapType::iterator Find(const StringView& Key) {
+        return Map.find(Key);
     }
 
-    [[nodiscard]] constexpr T& Get(this SymbolTable& Self, USize Index) {
-        assert(Index < Self.Data.size() && "Index out of range");
-        return Self.Data[Index]; 
+    [[nodiscard]] constexpr T& Get(USize Index) {
+        assert(Index < Items.size() && "Index out of range");
+        return Items[Index]; 
     }
 
-    [[nodiscard]] constexpr USize Size(this SymbolTable& Self) { return Self.Data.size(); }
+    [[nodiscard]] constexpr USize Size() { return Items.size(); }
     
-    void Clear(this SymbolTable& Self) {
-        Self.Map.clear();
-        Self.Data.clear();
+    void Clear() {
+        Map.clear();
+        Items.clear();
     }
 
-    MapType Map = {};
-    VectorType Data = VectorType();
+    MapType Map;
+    VectorType Items;
 };
